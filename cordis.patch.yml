@@ -1,0 +1,37 @@
+# The dsh-plugin-token-cost bundle layer: one row mounting the plugin's host
+# half, whose `dsh.client` declaration supplies the browser half from the same
+# package.
+#
+# The plugin ships **no rates**. A route with no declared rates renders as
+# `unpriced` and contributes nothing to the total — unpriced is never reported
+# as free. Declare them either here or in Settings → Plugins → Plugin
+# configuration → the "Token rates" card.
+#
+# This row's `config` is the base layer of the `token-cost` settings namespace,
+# so a value saved in the card overrides exactly the field it edits, and
+# clearing that field in the card restores the value below. A deployment that
+# wants the schedule and the rate table in the composition rather than in the
+# settings document writes:
+#
+#   - id: token-cost
+#     name: dsh-plugin-token-cost
+#     config:
+#       schedule:
+#         utcOffsetMinutes: 480        # local offset the windows are read in
+#         peakDays: [1, 2, 3, 4, 5]    # ISO weekdays; 1 = Monday … 7 = Sunday
+#         peakWindows:
+#           - { startMinutes: 540, endMinutes: 720 }     # 09:00–12:00 local
+#           - { startMinutes: 840, endMinutes: 1080 }    # 14:00–18:00 local
+#         offPeakMultiplier: 0.5       # off-peak = peak × this
+#       rates:
+#         - provider: deepseek-official
+#           model: deepseek-v4.1-flash
+#           input: 0.3
+#           output: 1.2
+#           cacheRead: 0.006
+#           cacheWrite: 0
+#
+# Omitting `schedule` prices every attempt at the peak rates.
+- insert:
+    - id: token-cost
+      name: dsh-plugin-token-cost

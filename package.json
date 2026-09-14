@@ -1,0 +1,74 @@
+{
+  "name": "dsh-plugin-token-cost",
+  "version": "0.1.0",
+  "description": "Peak/off-peak token cost estimate for DeepSeek Harness: a session projection, a composer pill with a breakdown panel, and a settings card for the rates and the pricing schedule.",
+  "license": "MIT",
+  "author": "GG-Features",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GG-Features/dsh-plugin-token-cost.git"
+  },
+  "homepage": "https://github.com/GG-Features/dsh-plugin-token-cost#readme",
+  "bugs": {
+    "url": "https://github.com/GG-Features/dsh-plugin-token-cost/issues"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "plugin",
+    "bundle",
+    "token",
+    "cost",
+    "pricing",
+    "off-peak",
+    "peak"
+  ],
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./client": {
+      "default": "./client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^29.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
