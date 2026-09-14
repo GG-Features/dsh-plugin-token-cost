@@ -1,5 +1,7 @@
 # dsh-plugin-token-cost
 
+**English** · [简体中文](./README.zh-CN.md)
+
 Estimated session spend for DeepSeek Harness, priced by **peak and off-peak
 rates**: every attempt is charged at the rate set that was in force when it
 happened, not at whatever the rate happens to be when you read the total.
@@ -14,7 +16,7 @@ happened, not at whatever the rate happens to be when you read the total.
 | `Token rates` card | browser `settings.plugin.item` entry keyed `token-cost` | Settings → Plugins → Plugin configuration |
 
 The pill shows `≈$0.0123`. Clicking it expands a panel with the four priced
-usage buckets (tokens, USD, share of the priced total, and a composition strip),
+usage buckets (tokens, share of the priced total, USD, and a composition strip),
 the peak/off-peak split for the configured schedule, and one row per route. A
 route with no declared rates renders as `unpriced` and contributes nothing to
 the total — unpriced is never reported as free.
@@ -218,6 +220,19 @@ pnpm test
 - `test/client.test.mjs` — the card's disclosure behaviour (collapsed, open,
   staged edits, one footer save, discard, auto-collapse) and the pill's pricing,
   mounted in jsdom with React Testing Library.
+
+### Panel layout
+
+The pill's breakdown is **one CSS grid owned by the panel**: each row is a
+`display: contents` box whose cells declare their own column, so the token,
+share and USD columns share a single geometry and every figure lines up whatever
+its width. A grid per row cannot do that — an `auto` track is sized by the row's
+own content, so the money column drifted by up to 54px between the buckets, the
+peak/off-peak split and the routes. A route row spans the label columns and
+leaves the money column to the USD, which is the panel's right edge and therefore
+where the header total already sits. Cells are emitted in ascending column order,
+which is what sparse auto-placement needs to keep a row's cells on one grid row;
+`test/client.test.mjs` pins both halves of that contract.
 
 A local `link:` install resolves `@deepseek-ai/schemastery` from this directory's
 own `node_modules`, because a linked package resolves its imports from its real

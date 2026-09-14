@@ -206,3 +206,74 @@ test('a host view without a matching basis keeps the host numbers', () => {
   assert.ok(view.container.innerHTML.includes('0.483'), 'the host total stands')
   cleanup()
 })
+
+/**
+ * The breakdown is one grid owned by the panel: rows are `display: contents`,
+ * so a row's cells are placed by the panel's tracks. Two things make that work
+ * and are therefore pinned here — every cell declares its column, and a row's
+ * cells are emitted in ascending column order, which is what sparse
+ * auto-placement needs to keep them on one grid row.
+ */
+test('the breakdown declares one shared column order', () => {
+  store.value = { schedule: SCHEDULE, rates: RATES }
+  const view = render(React.createElement(dock.component, { useProjection: () => projection() }))
+  fireEvent.click(view.container.querySelector('.dsh-plugin-token-cost'))
+
+  const panel = view.container.querySelector('.dsh-plugin-token-cost__panel')
+  assert.ok(panel, 'the panel is open')
+  assert.ok(
+    view.container.querySelector('.dsh-plugin-token-cost__num.is-usd.dsh-plugin-token-cost__total'),
+    'the header total sits in the money column',
+  )
+
+  const columnOf = (cell) => {
+    if (cell.classList.contains('dsh-plugin-token-cost__dot')) return 1
+    if (cell.classList.contains('dsh-plugin-token-cost__label')) return cell.closest('.is-route') ? 1 : 2
+    if (cell.classList.contains('is-tokens')) return 3
+    if (cell.classList.contains('is-share')) return 4
+    if (cell.classList.contains('is-usd')) return 5
+    return 0
+  }
+
+  const rows = [...panel.querySelectorAll('.dsh-plugin-token-cost__row')]
+  const bucketRows = rows.filter((row) => !row.classList.contains('is-route') && !row.classList.contains('is-window'))
+  const windowRows = rows.filter((row) => row.classList.contains('is-window'))
+  const routeRows = rows.filter((row) => row.classList.contains('is-route'))
+  assert.equal(bucketRows.length, 4, 'one row per priced bucket')
+  assert.equal(windowRows.length, 2, 'peak and off-peak')
+  assert.equal(routeRows.length, 1, 'one row per priced route')
+
+  for (const row of rows) {
+    const columns = [...row.children].map(columnOf)
+    assert.ok(columns.every((column) => column > 0), `every cell names a column: ${row.className}`)
+    assert.deepEqual(
+      columns,
+      [...columns].sort((left, right) => left - right),
+      `a row's cells are emitted in column order: ${row.className}`,
+    )
+  }
+
+  for (const row of bucketRows) {
+    assert.deepEqual([...row.children].map(columnOf), [1, 2, 3, 4, 5], 'a bucket row fills every column')
+  }
+  for (const row of windowRows) {
+    assert.deepEqual([...row.children].map(columnOf), [1, 2, 4, 5], 'a window row has no token count')
+  }
+  assert.deepEqual([...routeRows[0].children].map(columnOf), [1, 5], 'a route row spans the label columns')
+  cleanup()
+})
+
+test('the shipped stylesheet places every cell in that shared grid', () => {
+  const styles = [...document.head.querySelectorAll('style[data-plugin="dsh-plugin-token-cost"]')]
+    .map((tag) => tag.textContent)
+    .join('\n')
+  assert.ok(styles.length > 0, 'the bundle injects its stylesheet')
+  assert.match(styles, /__panel \{[^}]*display: grid/, 'the panel owns the grid')
+  assert.match(styles, /__head, \.dsh-plugin-token-cost__row \{ display: contents; \}/, 'rows are transparent boxes')
+  for (const [selector, column] of [['is-tokens', 3], ['is-share', 4], ['is-usd', 5]]) {
+    assert.ok(
+      styles.includes(`.dsh-plugin-token-cost__num.${selector} { grid-column: ${column}; }`),
+      `${selector} is placed in column ${column}`,
+    )
+  }
+})

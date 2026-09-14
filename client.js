@@ -152,25 +152,36 @@ window.__ModuleLoader__.load({
       '.dsh-plugin-token-cost__mark { color: var(--dsw-alias-state-success-primary); }',
       '.dsh-plugin-token-cost__wrap { display: flex; flex-direction: column; align-items: center; gap: 6px;',
       '  width: 100%; max-width: var(--dsh-composer-card-max-width, 720px); margin-top: 4px; }',
+      // One grid for the whole breakdown, not one per row: rows are transparent
+      // boxes and their cells are placed into the panel's own columns, so the
+      // token, share and USD columns share one geometry and every figure lines
+      // up whatever its width. A per-row grid cannot do that — an `auto` track
+      // is sized by the row's own content, which drifts from row to row.
       '.dsh-plugin-token-cost__panel { box-sizing: border-box; width: 100%; padding: 10px 12px; text-align: left;',
+      '  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto auto; column-gap: 8px; align-items: center;',
       '  border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-layer-1);',
       '  color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 18px; }',
-      '.dsh-plugin-token-cost__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;',
-      '  color: var(--dsw-alias-label-primary); font-size: 12px; }',
-      '.dsh-plugin-token-cost__total { font-variant-numeric: tabular-nums; }',
-      '.dsh-plugin-token-cost__strip { display: flex; height: 4px; margin: 8px 0 10px; border-radius: 2px;',
+      '.dsh-plugin-token-cost__head, .dsh-plugin-token-cost__row { display: contents; }',
+      // Cells are declared in ascending column order so sparse auto-placement
+      // keeps each row's cells on one grid row.
+      '.dsh-plugin-token-cost__title { grid-column: 1 / 4; color: var(--dsw-alias-label-primary); font-size: 12px; }',
+      '.dsh-plugin-token-cost__total { grid-column: 5; color: var(--dsw-alias-label-primary); font-size: 12px;',
+      '  text-align: right; font-variant-numeric: tabular-nums; }',
+      '.dsh-plugin-token-cost__strip { grid-column: 1 / -1; display: flex; height: 4px; margin: 8px 0 10px; border-radius: 2px;',
       '  overflow: hidden; background: var(--dsw-alias-bg-layer-2); }',
       '.dsh-plugin-token-cost__seg { display: block; min-width: 1px; }',
-      '.dsh-plugin-token-cost__row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto 46px;',
-      '  align-items: center; gap: 8px; }',
-      '.dsh-plugin-token-cost__row.is-route { grid-template-columns: minmax(0, 1fr) auto; }',
-      '.dsh-plugin-token-cost__row.is-window { grid-template-columns: 8px minmax(0, 1fr) auto auto; }',
-      '.dsh-plugin-token-cost__dot { width: 8px; height: 8px; border-radius: 2px; }',
+      '.dsh-plugin-token-cost__dot { grid-column: 1; width: 8px; height: 8px; border-radius: 2px; }',
       '.dsh-plugin-token-cost__dot.is-peak { background: var(--dsw-alias-brand-primary); }',
       '.dsh-plugin-token-cost__dot.is-off-peak { background: var(--dsw-alias-state-success-primary); }',
-      '.dsh-plugin-token-cost__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '.dsh-plugin-token-cost__label { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      // A route row has no dot, so its label starts at the panel edge — level
+      // with the section caption — and still leaves the USD in the shared column.
+      '.dsh-plugin-token-cost__row.is-route > .dsh-plugin-token-cost__label { grid-column: 1 / 5; }',
       '.dsh-plugin-token-cost__num { text-align: right; font-variant-numeric: tabular-nums; }',
-      '.dsh-plugin-token-cost__caption { margin: 10px 0 4px; padding-top: 8px;',
+      '.dsh-plugin-token-cost__num.is-tokens { grid-column: 3; }',
+      '.dsh-plugin-token-cost__num.is-share { grid-column: 4; }',
+      '.dsh-plugin-token-cost__num.is-usd { grid-column: 5; }',
+      '.dsh-plugin-token-cost__caption { grid-column: 1 / -1; margin: 10px 0 4px; padding-top: 8px;',
       '  border-top: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); }',
       '.dsh-plugin-token-cost__dot.is-input, .dsh-plugin-token-cost__seg.is-input { background: var(--dsw-alias-brand-primary); }',
       '.dsh-plugin-token-cost__dot.is-cache-read, .dsh-plugin-token-cost__seg.is-cache-read { background: var(--dsw-alias-state-success-primary); }',
@@ -489,15 +500,19 @@ window.__ModuleLoader__.load({
         )
         : null
 
+      // Cells are emitted in column order (dot, label, tokens, share, USD) so the
+      // panel's sparse auto-placement keeps a row's cells on one grid row. The
+      // shares sit before the money so the money column is the panel's right edge,
+      // which is where the header total already is.
       const bucketRows = BUCKETS.map((bucket) => React.createElement('div', {
         className: 'dsh-plugin-token-cost__row',
         key: bucket.usd,
       },
         React.createElement('span', { className: 'dsh-plugin-token-cost__dot ' + bucket.cls }),
         React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, t('bucket.' + bucket.key)),
-        React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, formatTokens(tokenTotals[bucket.tokens])),
-        React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, '$' + formatUsd(buckets[bucket.usd])),
-        React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, shareOf(buckets[bucket.usd], total) + '%'),
+        React.createElement('span', { className: 'dsh-plugin-token-cost__num is-tokens' }, formatTokens(tokenTotals[bucket.tokens])),
+        React.createElement('span', { className: 'dsh-plugin-token-cost__num is-share' }, shareOf(buckets[bucket.usd], total) + '%'),
+        React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, '$' + formatUsd(buckets[bucket.usd])),
       ))
 
       // The peak/off-peak split only means anything once a schedule is configured.
@@ -511,24 +526,28 @@ window.__ModuleLoader__.load({
           },
             React.createElement('span', { className: 'dsh-plugin-token-cost__dot ' + (kind === 'peak' ? 'is-peak' : 'is-off-peak') }),
             React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, t('panel.' + kind)),
-            React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, '$' + formatUsd(usd)),
-            React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, shareOf(usd, total) + '%'),
+            React.createElement('span', { className: 'dsh-plugin-token-cost__num is-share' }, shareOf(usd, total) + '%'),
+            React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, '$' + formatUsd(usd)),
           )
         })
 
-      const routeRows = priced.map((route, index) => React.createElement('div', {
-        className: 'dsh-plugin-token-cost__row is-route',
-        key: route.provider + '/' + route.model + ':' + index,
-        title: t('panel.peak') + ' $' + formatUsd(route.peakUsd === undefined ? route.usd : route.peakUsd)
+      const routeRows = priced.map((route, index) => {
+        // The row is a `display: contents` box and has no hover area of its own,
+        // so the per-route detail rides both of its cells instead.
+        const detail = t('panel.peak') + ' $' + formatUsd(route.peakUsd === undefined ? route.usd : route.peakUsd)
           + ' · ' + t('panel.offPeak') + ' $' + formatUsd(route.offPeakUsd === undefined ? 0 : route.offPeakUsd)
           + '\n' + 'in ' + formatTokens(route.uncachedInputTokens)
           + ' · cache read ' + formatTokens(route.cacheReadTokens)
           + ' · cache write ' + formatTokens(route.cacheWriteTokens)
-          + ' · out ' + formatTokens(route.outputTokens),
-      },
-        React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, route.provider + '/' + route.model),
-        React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, '$' + formatUsd(route.usd)),
-      ))
+          + ' · out ' + formatTokens(route.outputTokens)
+        return React.createElement('div', {
+          className: 'dsh-plugin-token-cost__row is-route',
+          key: route.provider + '/' + route.model + ':' + index,
+        },
+          React.createElement('span', { className: 'dsh-plugin-token-cost__label', title: detail }, route.provider + '/' + route.model),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd', title: detail }, '$' + formatUsd(route.usd)),
+        )
+      })
 
       const unpricedRows = routes
         .filter((route) => typeof route.usd !== 'number')
@@ -537,13 +556,13 @@ window.__ModuleLoader__.load({
           key: 'unpriced:' + route.provider + '/' + route.model + ':' + index,
         },
           React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, route.provider + '/' + route.model),
-          React.createElement('span', { className: 'dsh-plugin-token-cost__num' }, t('pill.unpriced')),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, t('pill.unpriced')),
         ))
 
       const panel = React.createElement('div', { className: 'dsh-plugin-token-cost__panel' },
         React.createElement('div', { className: 'dsh-plugin-token-cost__head' },
-          React.createElement('span', null, t('panel.title')),
-          React.createElement('span', { className: 'dsh-plugin-token-cost__total' }, '≈$' + formatUsd(total)),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__title' }, t('panel.title')),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd dsh-plugin-token-cost__total' }, '≈$' + formatUsd(total)),
         ),
         strip,
         bucketRows,
