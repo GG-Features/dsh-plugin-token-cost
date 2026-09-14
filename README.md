@@ -27,6 +27,23 @@ collapses the card again.
 
 ## Install
 
+From the git repository:
+
+```sh
+dsh plugin --profile web add github:GG-Features/dsh-plugin-token-cost
+```
+
+From a checkout you already have, or from a packed tarball (for example one
+attached to a release):
+
+```sh
+dsh plugin --profile web add /path/to/dsh-plugin-token-cost
+pnpm pack
+dsh plugin --profile web add ./dsh-plugin-token-cost-0.1.0.tgz
+```
+
+Once the package is on the registry, the shortest form is:
+
 ```sh
 dsh plugin --profile web add dsh-plugin-token-cost
 ```
@@ -36,18 +53,10 @@ half registers the projection and the settings namespace, and the browser half i
 served from `/plugins/dsh-plugin-token-cost/client.js`.
 
 The package ships plain JavaScript — an ESM host entry and a hand-written
-module-factory browser bundle — so **no build step runs** in any install form:
-
-| Form | Command |
-| --- | --- |
-| npm registry | `dsh plugin --profile web add dsh-plugin-token-cost` |
-| tarball | `pnpm pack` then `dsh plugin --profile web add ./dsh-plugin-token-cost-0.1.0.tgz` |
-| local checkout | `dsh plugin --profile web add /path/to/dsh-plugin-token-cost` |
-| git host | `dsh plugin --profile web add github:you/dsh-plugin-token-cost` |
-
-A git install fetches sources rather than artifacts, and pnpm ≥10 normally asks
-the user to allow a dependency's build scripts. This package declares no
-`prepare` or `postinstall` script, so there is nothing to allow.
+module-factory browser bundle — so **no build step runs** in any of those forms. A
+git install fetches sources rather than artifacts, and pnpm ≥10 normally asks the
+user to allow a dependency's build scripts; this package declares no `prepare` or
+`postinstall` script, so there is nothing to allow.
 
 ## Quick start
 
