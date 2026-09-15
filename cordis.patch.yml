@@ -29,6 +29,11 @@
 # entry is matched by the provider/model pair the harness reports for an
 # attempt, so a proxy or another provider route stays `unpriced` — never
 # silently free — until it declares its own entries.
+#
+# Either layer may also declare how an amount is shown: the display currency
+# `currency: { code, symbol, rate }`, where `rate` is display units per 1 USD.
+# It is display-only, so it never moves a priced amount, and it defaults to
+# plain US dollars.
 - insert:
     - id: token-cost
       name: dsh-plugin-token-cost

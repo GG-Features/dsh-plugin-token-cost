@@ -225,3 +225,34 @@ test('the namespace validation refuses a stale rate field and an empty schedule'
   assert.throws(() => validate({ schedule: { ...SCHEDULE, peakDays: [] }, rates: RATES }))
   validate({ schedule: SCHEDULE, rates: RATES })
 })
+
+test('the config schema defaults the display currency to plain USD', () => {
+  assert.deepEqual(plugin.Config({ rates: [] }).currency, { code: 'USD', symbol: '$', rate: 1 })
+  assert.deepEqual(
+    plugin.Config({ rates: [], currency: { code: 'CNY', symbol: '¥', rate: 7.1 } }).currency,
+    { code: 'CNY', symbol: '¥', rate: 7.1 },
+  )
+  // A half-written currency fails loudly instead of borrowing the USD symbol.
+  assert.throws(() => plugin.Config({ rates: [], currency: { code: 'CNY' } }))
+})
+
+test('the namespace validation refusals cover the display currency', () => {
+  const host = mount()
+  const { validate } = host.options
+  validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: 7.1 } })
+  assert.throws(() => validate({
+    schedule: SCHEDULE,
+    rates: RATES,
+    currency: { code: 'CNY', symbol: '¥', rate: 7.1, live: true },
+  }))
+  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: '', symbol: '¥', rate: 7.1 } }))
+  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '', rate: 7.1 } }))
+  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: -1 } }))
+})
+
+test('a display currency never moves a priced amount', () => {
+  const host = mount({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: 7.1 } })
+  const view = host.view([header('p', 'm'), message(1, 1, 'p', 'm', usage(100, 200, 1000, 0), PEAK_MORNING)])
+  near(view.totalUsd, PEAK_USD, 'peak total')
+  near(view.routes[0].usd, PEAK_USD, 'route total')
+})

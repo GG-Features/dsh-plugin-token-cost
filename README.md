@@ -15,17 +15,18 @@ happened, not at whatever the rate happens to be when you read the total.
 | composer pill | browser `conversation.composer.dock` entry | under the composer, beside the shipped stats pills |
 | `Token rates` card | browser `settings.plugin.item` entry keyed `token-cost` | Settings → Plugins → Plugin configuration |
 
-The pill shows `≈$0.0123`. Clicking it expands a panel with the four priced
-usage buckets (tokens, share of the priced total, USD, and a composition strip),
-the peak/off-peak split for the configured schedule, and one row per route. A
-route with no declared rates renders as `unpriced` and contributes nothing to
-the total — unpriced is never reported as free.
+The pill shows `≈$0.0123`, or `≈¥0.0873` once another display currency is
+declared. Clicking it expands a panel with the four priced usage buckets (tokens,
+share of the priced total, the amount in the display currency, and a composition
+strip), the peak/off-peak split for the configured schedule, and one row per
+route. A route with no declared rates renders as `unpriced` and contributes
+nothing to the total — unpriced is never reported as free.
 
 In Settings → Plugins → Plugin configuration the card joins the shipped cards as
 one more collapsed row: a title and description that open in place, a header
-mark while edits are staged, and one footer save that writes the rate table and
-the schedule together in a single revision-fenced mutation. A confirmed save
-collapses the card again.
+mark while edits are staged, and one footer save that writes the display
+currency, the rate table and the schedule together in a single revision-fenced
+mutation. A confirmed save collapses the card again.
 
 ## What it looks like
 
@@ -100,6 +101,8 @@ is declared. Rates resolve in either of two places, or in both:
                output: 1.2
                cacheRead: 0.006
                cacheWrite: 0
+           # Optional: show amounts in yuan. See "Display currency".
+           currency: { code: CNY, symbol: ¥, rate: 7.1 }
    ```
 
 2. **The user layer** — the Settings card, stored under the `token-cost` key of
@@ -138,7 +141,8 @@ token-cost:
 ```
 
 All four are required and are USD per million tokens, matching the four disjoint
-buckets of the provider's reported usage. An unknown field on a rate entry is
+buckets of the provider's reported usage; the display currency changes what an
+amount reads as, never what a rate means. An unknown field on a rate entry is
 refused loudly at load rather than ignored, so a value the schema cannot honor is
 never silently dropped.
 
@@ -165,6 +169,36 @@ each list at least one entry; a schedule with neither is refused at load.
 The discount is one multiplier on purpose: four flat rates plus a factor cannot
 drift out of the 1:2 relationship a flat off-peak discount requires, and a
 per-bucket off-peak table would be a second thing to keep in sync.
+
+## Display currency
+
+Amounts are priced in USD and shown converted. `currency` says what the browser
+half prints in front of an amount and what one USD is worth in it:
+
+```yaml
+token-cost:
+  currency:
+    code: CNY     # the label the switch marks as current
+    symbol: ¥     # the text in front of an amount
+    rate: 7.1     # display units per 1 USD
+```
+
+The field is display-only. The projection, its persisted checkpoint and every
+priced total stay USD, so choosing another currency never reprices a session,
+invalidates a stored estimate, or changes what a route costs — only the text a
+number becomes. `rate: 1` reads every amount as plain US dollars, which is the
+default when no `currency` is declared.
+
+Nothing here is fetched. `rate` is a number you maintain, exactly like the rate
+table beside it: the presets ship `1 USD = 7.10 CNY`, `0.92 EUR`, `0.79 GBP`,
+`7.80 HKD` and `155 JPY` as starting points, and a stale one shows a stale
+amount. Pick the value you are billed at.
+
+The Settings card carries a **Display currency** block: one preset per offered
+currency, each staging its code, its symbol and its rate, plus code, symbol and
+rate fields for anything else. The pill's breakdown panel carries the same
+presets as one-click chips for a reader who only wants to see yuan, writing the
+same field without opening Settings.
 
 ## How the estimate is computed
 
@@ -214,6 +248,9 @@ per-bucket off-peak table would be a second thing to keep in sync.
 - **Rates are not fetched from anywhere.** Everything here is what you declared:
   a provider price change is a table edit, not an automatic update. (Some other
   cost plugins sync official prices on a schedule.)
+- **The display rate is not fetched either.** `currency.rate`, including every
+  preset's, is a number you maintain: nothing here reads an exchange rate, and
+  the card cannot tell a stale one from a fresh one.
 - **A host-half change needs a profile restart.** A profile's live reload applies
   configuration only, so editing `index.js` while the profile runs changes the
   row's config but not the loaded module. `client.js` is different: the client
@@ -235,11 +272,13 @@ pnpm install
 pnpm test
 ```
 
-- `test/host.test.mjs` — the fold, the schedule, the pricing, and the schema
-  refusals. Runs on `node --test` with no dependencies.
+- `test/host.test.mjs` — the fold, the schedule, the pricing, the display
+  currency's defaults and refusals, and the schema refusals. Runs on
+  `node --test` with no dependencies.
 - `test/client.test.mjs` — the card's disclosure behaviour (collapsed, open,
-  staged edits, one footer save, discard, auto-collapse) and the pill's pricing,
-  mounted in jsdom with React Testing Library.
+  staged edits, one footer save, discard, auto-collapse), its currency switch,
+  and the pill's pricing and formatting, mounted in jsdom with React Testing
+  Library.
 
 ### Panel layout
 

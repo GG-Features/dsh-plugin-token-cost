@@ -163,7 +163,42 @@ test('an incomplete new route is refused rather than added', () => {
   fireEvent.click(container.querySelector('.dsh-plugin-token-cost-card__header'))
   fireEvent.click(buttonWithText('card.add'))
   assert.ok(container.innerHTML.includes('dsh-plugin-token-cost-card__error'), 'the refusal is reported')
-  assert.equal(container.querySelectorAll('.dsh-plugin-token-cost-card__block:not(.is-add)').length, 2, 'schedule + one route')
+  assert.equal(container.querySelectorAll('.dsh-plugin-token-cost-card__block:not(.is-add)').length, 3, 'currency + schedule + one route')
+  cleanup()
+})
+
+test('a currency preset stages the code, the symbol and its rate, and one save writes it', async () => {
+  const { container, buttonWithText } = openCard()
+  fireEvent.click(container.querySelector('.dsh-plugin-token-cost-card__header'))
+  assert.ok(
+    container.querySelector('.dsh-plugin-token-cost-card__preset.is-on').textContent.includes('USD'),
+    'the stored currency is the one marked',
+  )
+  const preset = [...container.querySelectorAll('.dsh-plugin-token-cost-card__preset')]
+    .find((button) => button.textContent.includes('CNY'))
+  fireEvent.click(preset)
+  assert.ok(container.innerHTML.includes('dsh-plugin-token-cost-card__tag'), 'the header marks the edit')
+  fireEvent.click(buttonWithText('card.save'))
+  await React.act(async () => {})
+  const ops = store.mutations[store.mutations.length - 1]
+  const currency = ops.find((op) => op.path[0] === 'currency')
+  assert.ok(currency, 'the currency op is present')
+  assert.deepEqual(currency.value, { code: 'CNY', symbol: '¥', rate: 7.1 })
+  cleanup()
+})
+
+test('the card warns while a non-USD currency still reads at par', () => {
+  const { container } = openCard()
+  fireEvent.click(container.querySelector('.dsh-plugin-token-cost-card__header'))
+  const rate = [...container.querySelectorAll('.dsh-plugin-token-cost-card__field')]
+    .find((label) => label.textContent.includes('card.currencyRate'))
+    .querySelector('input')
+  fireEvent.change(rate, { target: { value: '1' } })
+  const code = [...container.querySelectorAll('.dsh-plugin-token-cost-card__field')]
+    .find((label) => label.textContent.includes('card.currencyCode'))
+    .querySelector('input')
+  fireEvent.change(code, { target: { value: 'CNY' } })
+  assert.ok(container.innerHTML.includes('card.currencyPar'), 'the par rate is called out')
   cleanup()
 })
 
@@ -204,6 +239,41 @@ test('a host view without a matching basis keeps the host numbers', () => {
   delete stale.slotBasis
   const view = render(React.createElement(dock.component, { useProjection: () => stale }))
   assert.ok(view.container.innerHTML.includes('0.483'), 'the host total stands')
+  cleanup()
+})
+
+test('the pill converts and labels the declared currency', () => {
+  store.value = { schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: 7.1 } }
+  const view = render(React.createElement(dock.component, { useProjection: () => projection() }))
+  // The client-priced 0.407 USD reads as 2.89 CNY at the declared rate.
+  assert.ok(view.container.innerHTML.includes('¥'), `expected the declared symbol, got ${view.container.innerHTML}`)
+  assert.ok(view.container.innerHTML.includes('2.89'), `expected the converted total, got ${view.container.innerHTML}`)
+  assert.ok(!view.container.innerHTML.includes('0.407'), 'the USD total is not shown beside it')
+  cleanup()
+})
+
+test('the pill says which currency an unpriced session would be shown in', () => {
+  store.value = { schedule: SCHEDULE, rates: [], currency: { code: 'CNY', symbol: '¥', rate: 7.1 } }
+  const unpriced = projection()
+  delete unpriced.routes[0].usd
+  delete unpriced.routes[0].peakUsd
+  delete unpriced.routes[0].offPeakUsd
+  const view = render(React.createElement(dock.component, { useProjection: () => unpriced }))
+  assert.ok(view.container.innerHTML.includes('¥—'), 'the unpriced mark carries the symbol')
+  cleanup()
+})
+
+test('the panel switch writes the display currency', () => {
+  store.value = { schedule: SCHEDULE, rates: RATES }
+  store.mutations = []
+  const view = render(React.createElement(dock.component, { useProjection: () => projection() }))
+  fireEvent.click(view.container.querySelector('.dsh-plugin-token-cost'))
+  const chip = [...view.container.querySelectorAll('.dsh-plugin-token-cost__currency')]
+    .find((button) => button.textContent.includes('EUR'))
+  fireEvent.click(chip)
+  assert.deepEqual(store.mutations[store.mutations.length - 1], [
+    { op: 'set', path: ['currency'], value: { code: 'EUR', symbol: '€', rate: 0.92 } },
+  ])
   cleanup()
 })
 

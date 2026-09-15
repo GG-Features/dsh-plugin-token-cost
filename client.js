@@ -38,6 +38,21 @@ window.__ModuleLoader__.load({
     const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]
     /** Histogram basis this bundle understands; a host publishing another one is priced by the host. */
     const SLOT_BASIS = 'weekday-half-hour'
+    /** What amounts are shown in until the namespace declares another currency. */
+    const DEFAULT_CURRENCY = { code: 'USD', symbol: '$', rate: 1 }
+    /**
+     * The currencies the switch offers, each with the rate it applies. Every
+     * rate is a snapshot a user is expected to correct, not a live quote: this
+     * bundle fetches nothing, exactly like the rate table beside it.
+     */
+    const CURRENCIES = [
+      { code: 'USD', symbol: '$', rate: 1 },
+      { code: 'CNY', symbol: '¥', rate: 7.1 },
+      { code: 'EUR', symbol: '€', rate: 0.92 },
+      { code: 'GBP', symbol: '£', rate: 0.79 },
+      { code: 'HKD', symbol: 'HK$', rate: 7.8 },
+      { code: 'JPY', symbol: '¥', rate: 155 },
+    ]
 
     const BUCKETS = [
       { key: 'uncachedInput', tokens: 'uncachedInputTokens', usd: 'uncachedInputUsd', cls: 'is-input' },
@@ -63,8 +78,16 @@ window.__ModuleLoader__.load({
       'card.discard': 'Discard',
       'card.expand': 'Expand',
       'card.collapse': 'Collapse',
-      'card.caption': 'USD per 1M tokens, per route. Attempts inside the peak schedule below use these rates; every other attempt uses them scaled by the off-peak multiplier.',
+      'card.caption': 'Rates are USD per 1M tokens, per route. Attempts inside the peak schedule below use these rates; every other attempt uses them scaled by the off-peak multiplier. Amounts are shown in the display currency below.',
       'card.rates': 'Declared rates',
+      'card.currency': 'Display currency',
+      'card.currencyHint': 'Rates stay USD per 1M tokens. Amounts are shown converted at this rate — a starting point you maintain, not a live quote. A rate of 1 reads every amount as US dollars.',
+      'card.currencyCode': 'Code',
+      'card.currencySymbol': 'Symbol',
+      'card.currencyRate': '1 USD =',
+      'card.currencyInvalid': 'The currency needs a code, a symbol, and a rate that is a number >= 0.',
+      'card.currencyPar': 'The rate is 1, so amounts still read as US dollars.',
+      'card.currencySwitch': 'Shown currency',
       'card.schedule': 'Peak schedule',
       'card.offset': 'UTC offset (min)',
       'card.peakDays': 'Peak days',
@@ -110,8 +133,16 @@ window.__ModuleLoader__.load({
       'card.discard': '放弃',
       'card.expand': '展开',
       'card.collapse': '收起',
-      'card.caption': '单位 USD / 百万 token，按路由配置。落在下面的高峰时段内的请求用这些费率，其余按费率 × 闲时倍率计算。',
+      'card.caption': '费率按 USD / 百万 token 逐路由填写。落在下面的高峰时段内的请求用这些费率，其余按费率 × 闲时倍率计算。金额按下面的显示货币换算显示。',
       'card.rates': '已声明的费率',
+      'card.currency': '显示货币',
+      'card.currencyHint': '费率仍按 USD / 百万 token 填写。金额按这里的汇率换算显示，汇率需要自己维护，不是实时牌价；汇率填 1 就是按美元读。',
+      'card.currencyCode': '代码',
+      'card.currencySymbol': '符号',
+      'card.currencyRate': '1 美元 =',
+      'card.currencyInvalid': '货币需要代码、符号，以及一个不小于 0 的汇率。',
+      'card.currencyPar': '汇率为 1，金额仍按美元读。',
+      'card.currencySwitch': '当前显示',
       'card.schedule': '计费时段',
       'card.offset': 'UTC 偏移（分钟）',
       'card.peakDays': '高峰日',
@@ -181,6 +212,15 @@ window.__ModuleLoader__.load({
       '.dsh-plugin-token-cost__num.is-tokens { grid-column: 3; }',
       '.dsh-plugin-token-cost__num.is-share { grid-column: 4; }',
       '.dsh-plugin-token-cost__num.is-usd { grid-column: 5; }',
+      // The currency switch sits under the money it changes, one chip per
+      // offered currency, and marks the one the amounts are currently shown in.
+      '.dsh-plugin-token-cost__currencies { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap;',
+      '  gap: 4px; margin-top: 8px; }',
+      '.dsh-plugin-token-cost__currency { height: 20px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l1);',
+      '  border-radius: 10px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary);',
+      '  font: inherit; font-size: 11px; line-height: 1; white-space: nowrap; cursor: pointer; }',
+      '.dsh-plugin-token-cost__currency:hover { background: var(--dsw-alias-interactive-bg-hover); }',
+      '.dsh-plugin-token-cost__currency.is-on { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }',
       '.dsh-plugin-token-cost__caption { grid-column: 1 / -1; margin: 10px 0 4px; padding-top: 8px;',
       '  border-top: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-primary); }',
       '.dsh-plugin-token-cost__dot.is-input, .dsh-plugin-token-cost__seg.is-input { background: var(--dsw-alias-brand-primary); }',
@@ -221,6 +261,10 @@ window.__ModuleLoader__.load({
       '.dsh-plugin-token-cost-card__day { width: 34px; height: 26px; padding: 0; }',
       '.dsh-plugin-token-cost-card__day.is-on { border-color: var(--dsw-alias-brand-primary);',
       '  background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); }',
+      '.dsh-plugin-token-cost-card__presets { display: flex; flex-wrap: wrap; gap: 4px; }',
+      '.dsh-plugin-token-cost-card__preset.is-on { border-color: var(--dsw-alias-brand-primary);',
+      '  background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); }',
+      '.dsh-plugin-token-cost-card__warn { margin-top: 8px; color: var(--dsw-alias-state-warn-primary); }',
       '.dsh-plugin-token-cost-card__window { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px 14px; }',
       '.dsh-plugin-token-cost-card__window + .dsh-plugin-token-cost-card__window { margin-top: 6px; }',
       '.dsh-plugin-token-cost-card__field { display: flex; flex-direction: column; gap: 3px; }',
@@ -232,6 +276,7 @@ window.__ModuleLoader__.load({
       '  color: var(--dsw-alias-label-primary); font: inherit; font-variant-numeric: tabular-nums; }',
       '.dsh-plugin-token-cost-card input[type="number"] { width: 92px; }',
       '.dsh-plugin-token-cost-card input[type="text"] { width: 178px; }',
+      '.dsh-plugin-token-cost-card input.is-short { width: 96px; }',
       '.dsh-plugin-token-cost-card input.is-clock { width: 74px; }',
       '.dsh-plugin-token-cost-card__body button { height: 26px; padding: 0 10px; border: 1px solid var(--dsw-alias-border-l1);',
       '  border-radius: 6px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);',
@@ -245,8 +290,8 @@ window.__ModuleLoader__.load({
       '  background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); }',
     ].join('\n')
 
-    /** USD text that keeps a small estimate readable without meaningless digits. */
-    function formatUsd(amount) {
+    /** Amount text that keeps a small estimate readable without meaningless digits. */
+    function formatAmount(amount) {
       if (!Number.isFinite(amount) || amount <= 0) return '0'
       if (amount < 0.0001) return '<0.0001'
       if (amount < 0.01) return amount.toFixed(4)
@@ -410,13 +455,35 @@ window.__ModuleLoader__.load({
       return () => { tag.remove() }
     }
 
-    /** The rates and schedule a settings snapshot carries, defensively. */
+    /**
+     * The display currency a settings snapshot carries, defensively.
+     *
+     * A wrong field falls back to USD rather than to a half-configured label:
+     * the host namespace refuses those values at the write, so this only covers
+     * a document written by another version.
+     */
+    function currencyOf(raw) {
+      if (raw === undefined || raw === null || typeof raw !== 'object') return DEFAULT_CURRENCY
+      const code = typeof raw.code === 'string' && raw.code.length > 0 ? raw.code : DEFAULT_CURRENCY.code
+      const symbol = typeof raw.symbol === 'string' && raw.symbol.length > 0
+        ? raw.symbol
+        : (code === DEFAULT_CURRENCY.code ? DEFAULT_CURRENCY.symbol : code)
+      const rate = typeof raw.rate === 'number' && Number.isFinite(raw.rate) && raw.rate >= 0
+        ? raw.rate
+        : DEFAULT_CURRENCY.rate
+      return { code, symbol, rate }
+    }
+
+    /** The rates, schedule and display currency a settings snapshot carries, defensively. */
     function settingsOf(snapshot) {
       const value = snapshot.value
-      if (value === undefined || value === null) return { rates: [], schedule: null }
+      if (value === undefined || value === null) {
+        return { rates: [], schedule: null, currency: DEFAULT_CURRENCY }
+      }
       return {
         rates: Array.isArray(value.rates) ? value.rates : [],
         schedule: value.schedule === undefined || value.schedule === null ? null : value.schedule,
+        currency: currencyOf(value.currency),
       }
     }
 
@@ -454,6 +521,10 @@ window.__ModuleLoader__.load({
       const routes = view.routes
       const buckets = view.buckets
       const total = view.totalUsd
+      // Priced amounts are USD; only the text is converted, so the same view
+      // reads as dollars or yuan without re-pricing anything.
+      const currency = settings.currency
+      const money = (usd) => currency.symbol + formatAmount(usd * currency.rate)
 
       const priced = routes.filter((route) => typeof route.usd === 'number')
       if (priced.length === 0) {
@@ -461,7 +532,7 @@ window.__ModuleLoader__.load({
         return React.createElement('div', {
           className: 'dsh-plugin-token-cost is-unpriced',
           title: t('pill.unpriced') + ': ' + names,
-        }, '≈$—')
+        }, '≈' + currency.symbol + '—')
       }
 
       const tokenTotals = { uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 }
@@ -479,8 +550,8 @@ window.__ModuleLoader__.load({
         title: t('pill.title'),
         onClick: () => { setOpen((previous) => !previous) },
       },
-        React.createElement('span', { className: 'dsh-plugin-token-cost__mark' }, '≈$'),
-        React.createElement('span', null, formatUsd(total)),
+        React.createElement('span', { className: 'dsh-plugin-token-cost__mark' }, '≈' + currency.symbol),
+        React.createElement('span', null, formatAmount(total * currency.rate)),
       )
 
       if (!open) return React.createElement('div', { className: 'dsh-plugin-token-cost__wrap' }, head)
@@ -494,7 +565,7 @@ window.__ModuleLoader__.load({
               key: bucket.usd,
               className: 'dsh-plugin-token-cost__seg ' + bucket.cls,
               style: { flexGrow: usd },
-              title: t('bucket.' + bucket.key) + '  $' + formatUsd(usd),
+              title: t('bucket.' + bucket.key) + '  ' + money(usd),
             })
           }),
         )
@@ -512,7 +583,7 @@ window.__ModuleLoader__.load({
         React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, t('bucket.' + bucket.key)),
         React.createElement('span', { className: 'dsh-plugin-token-cost__num is-tokens' }, formatTokens(tokenTotals[bucket.tokens])),
         React.createElement('span', { className: 'dsh-plugin-token-cost__num is-share' }, shareOf(buckets[bucket.usd], total) + '%'),
-        React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, '$' + formatUsd(buckets[bucket.usd])),
+        React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, money(buckets[bucket.usd])),
       ))
 
       // The peak/off-peak split only means anything once a schedule is configured.
@@ -527,15 +598,15 @@ window.__ModuleLoader__.load({
             React.createElement('span', { className: 'dsh-plugin-token-cost__dot ' + (kind === 'peak' ? 'is-peak' : 'is-off-peak') }),
             React.createElement('span', { className: 'dsh-plugin-token-cost__label' }, t('panel.' + kind)),
             React.createElement('span', { className: 'dsh-plugin-token-cost__num is-share' }, shareOf(usd, total) + '%'),
-            React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, '$' + formatUsd(usd)),
+            React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, money(usd)),
           )
         })
 
       const routeRows = priced.map((route, index) => {
         // The row is a `display: contents` box and has no hover area of its own,
         // so the per-route detail rides both of its cells instead.
-        const detail = t('panel.peak') + ' $' + formatUsd(route.peakUsd === undefined ? route.usd : route.peakUsd)
-          + ' · ' + t('panel.offPeak') + ' $' + formatUsd(route.offPeakUsd === undefined ? 0 : route.offPeakUsd)
+        const detail = t('panel.peak') + ' ' + money(route.peakUsd === undefined ? route.usd : route.peakUsd)
+          + ' · ' + t('panel.offPeak') + ' ' + money(route.offPeakUsd === undefined ? 0 : route.offPeakUsd)
           + '\n' + 'in ' + formatTokens(route.uncachedInputTokens)
           + ' · cache read ' + formatTokens(route.cacheReadTokens)
           + ' · cache write ' + formatTokens(route.cacheWriteTokens)
@@ -545,7 +616,7 @@ window.__ModuleLoader__.load({
           key: route.provider + '/' + route.model + ':' + index,
         },
           React.createElement('span', { className: 'dsh-plugin-token-cost__label', title: detail }, route.provider + '/' + route.model),
-          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd', title: detail }, '$' + formatUsd(route.usd)),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd', title: detail }, money(route.usd)),
         )
       })
 
@@ -559,11 +630,33 @@ window.__ModuleLoader__.load({
           React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd' }, t('pill.unpriced')),
         ))
 
+      // The switch under the total writes the display currency straight to the
+      // namespace, so a reader who wants yuan does not have to find Settings.
+      // A chip carries its own preset rate: the panel has no room to edit one,
+      // and the card is where a rate is corrected.
+      const currencySwitch = snapshot.writable === true
+        ? React.createElement('div', { className: 'dsh-plugin-token-cost__currencies' },
+          CURRENCIES.map((preset) => React.createElement('button', {
+            type: 'button',
+            key: 'currency:' + preset.code,
+            className: 'dsh-plugin-token-cost__currency' + (currency.code === preset.code ? ' is-on' : ''),
+            title: preset.code + ' · ' + t('card.currencyRate') + ' ' + preset.rate,
+            onClick: () => {
+              // Every label here comes from the snapshot, so a refused write
+              // leaves the panel showing what is stored; there is nothing to
+              // roll back and no second surface to tell.
+              props.scope.mutate([{ op: 'set', path: ['currency'], value: preset }]).catch(() => {})
+            },
+          }, preset.symbol + ' ' + preset.code)),
+        )
+        : null
+
       const panel = React.createElement('div', { className: 'dsh-plugin-token-cost__panel' },
         React.createElement('div', { className: 'dsh-plugin-token-cost__head' },
           React.createElement('span', { className: 'dsh-plugin-token-cost__title' }, t('panel.title')),
-          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd dsh-plugin-token-cost__total' }, '≈$' + formatUsd(total)),
+          React.createElement('span', { className: 'dsh-plugin-token-cost__num is-usd dsh-plugin-token-cost__total' }, '≈' + money(total)),
         ),
+        currencySwitch,
         strip,
         bucketRows,
         windowRows,
@@ -611,6 +704,9 @@ window.__ModuleLoader__.load({
       const addState = React.useState(emptyRateDraft())
       const draftAdd = addState[0]
       const setAdd = addState[1]
+      const currencyState = React.useState(() => toCurrencyDraft(settings.currency))
+      const currencyDraft = currencyState[0]
+      const setCurrencyDraft = currencyState[1]
       const openState = React.useState(false)
       const open = openState[0]
       const setOpen = openState[1]
@@ -620,6 +716,9 @@ window.__ModuleLoader__.load({
       const scheduleEditedState = React.useState(false)
       const scheduleEdited = scheduleEditedState[0]
       const setScheduleEdited = scheduleEditedState[1]
+      const currencyEditedState = React.useState(false)
+      const currencyEdited = currencyEditedState[0]
+      const setCurrencyEdited = currencyEditedState[1]
       const errorState = React.useState(null)
       const error = errorState[0]
       const setError = errorState[1]
@@ -631,8 +730,10 @@ window.__ModuleLoader__.load({
         const next = settingsOf(snapshot)
         setRateDrafts(next.rates.map(toDraft))
         setScheduleDraft(toScheduleDraft(next.schedule))
+        setCurrencyDraft(toCurrencyDraft(next.currency))
         setDirty(false)
         setScheduleEdited(false)
+        setCurrencyEdited(false)
       }, [snapshot.value])
 
       const writable = snapshot.writable === true
@@ -674,6 +775,11 @@ window.__ModuleLoader__.load({
           })),
           multiplier: String(schedule.offPeakMultiplier),
         }
+      }
+
+      /** One display-currency draft, as the card's text fields hold it. */
+      function toCurrencyDraft(currency) {
+        return { code: currency.code, symbol: currency.symbol, rate: String(currency.rate) }
       }
 
       /** Every rate draft as stored rows, or `ok: false` when one is not a rate. */
@@ -725,13 +831,26 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /** The currency draft as a stored currency, or `ok: false` when a field is not one. */
+      function readCurrency(draft) {
+        const code = String(draft.code).trim()
+        const symbol = String(draft.symbol).trim()
+        const raw = String(draft.rate).trim()
+        const rate = Number(raw)
+        if (code.length === 0 || symbol.length === 0) return { ok: false }
+        if (raw.length === 0 || !Number.isFinite(rate) || rate < 0) return { ok: false }
+        return { ok: true, value: { code, symbol, rate } }
+      }
+
       /** Drop every staged edit and return to what the document holds. */
       function discard() {
         const next = settingsOf(snapshot)
         setRateDrafts(next.rates.map(toDraft))
         setScheduleDraft(toScheduleDraft(next.schedule))
+        setCurrencyDraft(toCurrencyDraft(next.currency))
         setDirty(false)
         setScheduleEdited(false)
+        setCurrencyEdited(false)
         setError(null)
       }
 
@@ -750,6 +869,14 @@ window.__ModuleLoader__.load({
             return
           }
           ops.push({ op: 'set', path: ['schedule'], value: schedule.value })
+        }
+        if (currencyEdited) {
+          const currency = readCurrency(currencyDraft)
+          if (!currency.ok) {
+            setError(t('card.currencyInvalid'))
+            return
+          }
+          ops.push({ op: 'set', path: ['currency'], value: currency.value })
         }
         setError(null)
         props.scope.mutate(ops).then(() => { setOpen(false) }).catch((failure) => { setError(messageOf(failure)) })
@@ -795,6 +922,17 @@ window.__ModuleLoader__.load({
         editSchedule({ days })
       }
 
+      function editCurrency(patch) {
+        setDirty(true)
+        setCurrencyEdited(true)
+        setCurrencyDraft((previous) => Object.assign({}, previous, patch))
+      }
+
+      /** Stage one whole preset: its code and symbol, and the rate it applies. */
+      function applyCurrencyPreset(preset) {
+        editCurrency({ code: preset.code, symbol: preset.symbol, rate: String(preset.rate) })
+      }
+
       function editWindow(index, field, text) {
         editSchedule({
           windows: scheduleDraft.windows.map((window, at) => {
@@ -816,14 +954,16 @@ window.__ModuleLoader__.load({
 
       /** One labelled control. */
       function field(id, label, value, onChange, variant) {
-        const type = variant === 'text' || variant === 'clock' ? 'text' : 'number'
+        const isText = variant === 'text' || variant === 'clock' || variant === 'short'
+        const type = isText ? 'text' : 'number'
+        const className = variant === 'clock' ? 'is-clock' : variant === 'short' ? 'is-short' : undefined
         return React.createElement('label', { className: 'dsh-plugin-token-cost-card__field', key: id },
           React.createElement('span', { className: 'dsh-plugin-token-cost-card__fieldLabel' }, label),
           React.createElement('input', {
             type,
-            className: variant === 'clock' ? 'is-clock' : undefined,
-            step: type === 'text' ? undefined : '0.05',
-            min: type === 'text' ? undefined : '0',
+            className,
+            step: isText ? undefined : '0.05',
+            min: isText ? undefined : '0',
             max: variant === 'multiplier' ? '1' : undefined,
             value,
             disabled: !writable,
@@ -949,9 +1089,40 @@ window.__ModuleLoader__.load({
         ),
       )
 
+      // The rates stay USD: this block only decides how a priced amount is
+      // labelled and scaled on the way to the screen.
+      const currencyBlock = React.createElement('div', { className: 'dsh-plugin-token-cost-card__block' },
+        React.createElement('div', { className: 'dsh-plugin-token-cost-card__head' },
+          React.createElement('span', { className: 'dsh-plugin-token-cost-card__model' }, t('card.currency')),
+        ),
+        React.createElement('div', { className: 'dsh-plugin-token-cost-card__group' },
+          React.createElement('span', { className: 'dsh-plugin-token-cost-card__groupLabel' }, t('card.currencySwitch')),
+          React.createElement('div', { className: 'dsh-plugin-token-cost-card__presets' },
+            CURRENCIES.map((preset) => React.createElement('button', {
+              type: 'button',
+              key: 'currency:' + preset.code,
+              className: 'dsh-plugin-token-cost-card__preset' + (currencyDraft.code === preset.code ? ' is-on' : ''),
+              title: preset.code + ' · ' + t('card.currencyRate') + ' ' + preset.rate,
+              disabled: !writable,
+              onClick: () => { applyCurrencyPreset(preset) },
+            }, preset.symbol + ' ' + preset.code)),
+          ),
+        ),
+        React.createElement('div', { className: 'dsh-plugin-token-cost-card__group' },
+          field('currencyCode', t('card.currencyCode'), currencyDraft.code, (text) => { editCurrency({ code: text }) }, 'short'),
+          field('currencySymbol', t('card.currencySymbol'), currencyDraft.symbol, (text) => { editCurrency({ symbol: text }) }, 'short'),
+          field('currencyRate', t('card.currencyRate'), currencyDraft.rate, (text) => { editCurrency({ rate: text }) }),
+        ),
+        Number(String(currencyDraft.rate).trim()) === 1 && currencyDraft.code !== DEFAULT_CURRENCY.code
+          ? React.createElement('div', { className: 'dsh-plugin-token-cost-card__warn' }, t('card.currencyPar'))
+          : null,
+        React.createElement('div', { className: 'dsh-plugin-token-cost-card__hint' }, t('card.currencyHint')),
+      )
+
       const body = React.createElement('div', { className: 'dsh-plugin-token-cost-card__body' },
         React.createElement('div', { className: 'dsh-plugin-token-cost-card__caption' }, t('card.caption')),
         writable ? null : React.createElement('div', { className: 'dsh-plugin-token-cost-card__caption' }, t('card.readonly')),
+        currencyBlock,
         scheduleBlock,
         React.createElement('div', { className: 'dsh-plugin-token-cost-card__heading' }, t('card.rates')),
         rateDrafts.length === 0

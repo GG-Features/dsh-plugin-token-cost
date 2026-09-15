@@ -25,6 +25,11 @@
  * claims `tokenCost`, and a second registration of an existing key defers to
  * the first registration instead of failing.
  *
+ * Every priced amount is USD: the declared rates and the adapter's `modelCost`
+ * are USD per million tokens, and the view publishes USD. `currency` is display
+ * configuration the browser half applies while formatting a number, so choosing
+ * another shown currency reprices nothing and moves no persisted state.
+ *
  * @module dsh-plugin-token-cost
  */
 
@@ -70,15 +75,31 @@ const Schedule = z.object({
 })
 
 /**
- * The plugin's whole configuration: the schedule and rate table that also back
- * the `token-cost` settings namespace. The composition entry is therefore the
- * namespace's base layer, and a user edit overrides it field by field.
+ * How the browser half labels a priced amount, and what one USD is worth in it.
+ *
+ * The field is display-only: rates stay USD per million tokens, the view stays
+ * USD, and `rate` (display units per 1 USD, 1 for USD itself) is applied where
+ * the number becomes text. No field here can move a priced amount.
+ */
+const Currency = z.object({
+  code: z.string().required(),
+  symbol: z.string().required(),
+  rate: z.number().min(0).required(),
+})
+
+/**
+ * The plugin's whole configuration: the schedule, the rate table, and the
+ * display currency that also back the `token-cost` settings namespace. The
+ * composition entry is therefore the namespace's base layer, and a user edit
+ * overrides it field by field.
  *
  * `schedule` is optional: without it every attempt is priced at the peak rates.
+ * `currency` defaults to plain USD.
  */
 export const Config = z.object({
   schedule: z.union([Schedule]),
   rates: z.array(RateEntry).default([]),
+  currency: Currency.default({ code: 'USD', symbol: '$', rate: 1 }),
 })
 
 /** Loader plugin name. */
@@ -93,6 +114,8 @@ const RATE_KEYS = ['provider', 'model', 'input', 'output', 'cacheRead', 'cacheWr
 const SCHEDULE_KEYS = ['utcOffsetMinutes', 'peakDays', 'peakWindows', 'offPeakMultiplier']
 /** Every key one peak window may carry. */
 const WINDOW_KEYS = ['startMinutes', 'endMinutes']
+/** Every key the display currency may carry. */
+const CURRENCY_KEYS = ['code', 'symbol', 'rate']
 
 /**
  * Reject the fields this schema deliberately does not have. Schemastery passes
@@ -109,6 +132,21 @@ function validateSection(value) {
         }
       }
     })
+  }
+  const currency = value === undefined || value === null ? undefined : value.currency
+  if (currency !== undefined && currency !== null) {
+    for (const key of Object.keys(currency)) {
+      if (!CURRENCY_KEYS.includes(key)) throw new Error(`token-cost: currency carries unknown field ${JSON.stringify(key)}`)
+    }
+    if (typeof currency.code !== 'string' || currency.code.length === 0) {
+      throw new Error('token-cost: currency.code must be a non-empty string')
+    }
+    if (typeof currency.symbol !== 'string' || currency.symbol.length === 0) {
+      throw new Error('token-cost: currency.symbol must be a non-empty string')
+    }
+    if (typeof currency.rate !== 'number' || !Number.isFinite(currency.rate) || currency.rate < 0) {
+      throw new Error('token-cost: currency.rate must be a non-negative number of display units per 1 USD')
+    }
   }
   const schedule = value === undefined || value === null ? undefined : value.schedule
   if (schedule === undefined || schedule === null) return
