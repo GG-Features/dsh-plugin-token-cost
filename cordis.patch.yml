@@ -2,36 +2,69 @@
 # half, whose `dsh.client` declaration supplies the browser half from the same
 # package.
 #
-# The plugin ships **no rates**. A route with no declared rates renders as
-# `unpriced` and contributes nothing to the total — unpriced is never reported
-# as free. Declare them either here or in Settings → Plugins → Plugin
-# configuration → the "Token rates" card.
+# The row's `config` is the base layer of the `token-cost` settings namespace,
+# and it ships the official DeepSeek table so an install prices the official
+# route without any further setup: peak USD per million tokens, off-peak at
+# half of them (DeepSeek's own rule), peak hours Beijing time Monday–Friday
+# 09:00–12:00 and 14:00–18:00.
 #
-# This row's `config` is the base layer of the `token-cost` settings namespace,
-# so a value saved in the card overrides exactly the field it edits, and
-# clearing that field in the card restores the value below. A deployment that
-# wants the schedule and the rate table in the composition rather than in the
-# settings document writes:
+# Source: https://api-docs.deepseek.com/quick_start/pricing/ (read 2026-09-15).
+# DeepSeek publishes no cache-write charge, so `cacheWrite` is 0.
+#
+# A deployment overrides this base by patching this row's `config` in its own
+# patch layer:
 #
 #   - id: token-cost
-#     name: dsh-plugin-token-cost
 #     config:
-#       schedule:
-#         utcOffsetMinutes: 480        # local offset the windows are read in
-#         peakDays: [1, 2, 3, 4, 5]    # ISO weekdays; 1 = Monday … 7 = Sunday
-#         peakWindows:
-#           - { startMinutes: 540, endMinutes: 720 }     # 09:00–12:00 local
-#           - { startMinutes: 840, endMinutes: 1080 }    # 14:00–18:00 local
-#         offPeakMultiplier: 0.5       # off-peak = peak × this
 #       rates:
 #         - provider: deepseek-official
-#           model: deepseek-v4.1-flash
+#           model: <the id this deployment's adapter reports>
 #           input: 0.3
 #           output: 1.2
 #           cacheRead: 0.006
 #           cacheWrite: 0
 #
-# Omitting `schedule` prices every attempt at the peak rates.
+# or by saving the same values in Settings → Plugins → Plugin configuration →
+# 费率与计费时段 / Token rates, whose user layer wins field by field. A rate
+# entry is matched by the provider/model pair the harness reports for an
+# attempt, so a proxy or another provider route stays `unpriced` — never
+# silently free — until it declares its own entries.
 - insert:
     - id: token-cost
       name: dsh-plugin-token-cost
+      config:
+        schedule:
+          utcOffsetMinutes: 480        # Beijing; the windows are read at UTC+08:00
+          peakDays: [1, 2, 3, 4, 5]    # ISO weekdays: 1 = Monday … 7 = Sunday
+          peakWindows:
+            - { startMinutes: 540, endMinutes: 720 }     # 09:00–12:00 local
+            - { startMinutes: 840, endMinutes: 1080 }    # 14:00–18:00 local
+          offPeakMultiplier: 0.5       # off-peak = peak × 0.5
+        rates:
+          # deepseek-flash (DeepSeek-V4.1-Flash): cache hit $0.006, cache miss $0.30, output $1.20
+          - provider: deepseek-official
+            model: deepseek-flash
+            input: 0.3
+            output: 1.2
+            cacheRead: 0.006
+            cacheWrite: 0
+          # The retired names still answer and are billed at the Flash price.
+          - provider: deepseek-official
+            model: deepseek-v4-flash
+            input: 0.3
+            output: 1.2
+            cacheRead: 0.006
+            cacheWrite: 0
+          - provider: deepseek-official
+            model: deepseek-v4-flash-vision-exp
+            input: 0.3
+            output: 1.2
+            cacheRead: 0.006
+            cacheWrite: 0
+          # deepseek-v4-pro (DeepSeek-V4-Pro-0813): cache hit $0.044, cache miss $1.32, output $3.96
+          - provider: deepseek-official
+            model: deepseek-v4-pro
+            input: 1.32
+            output: 3.96
+            cacheRead: 0.044
+            cacheWrite: 0

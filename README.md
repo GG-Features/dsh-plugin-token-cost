@@ -62,12 +62,16 @@ user to allow a dependency's build scripts; this package declares no `prepare` o
 
 ## Quick start
 
-The plugin ships **no rates**, so a fresh install prices nothing: the pill shows
-`≈$—` until at least one route is declared. Declare rates in either of two
-places, or in both:
+The plugin ships the **official DeepSeek table** as the base layer of its
+`token-cost` row, so a fresh install prices the official routes with no further
+setup: peak USD per million tokens, off-peak at half, on DeepSeek's own peak
+hours. A route the table does not name — another provider, or a proxy with its
+own ids and prices — renders as `unpriced` and leaves the pill at `≈$—` until it
+is declared. Rates resolve in either of two places, or in both:
 
-1. **The composition base** — the `config` of the `token-cost` row, which is the
-   right home for values a deployment wants under version control:
+1. **The composition base** — the `config` of the `token-cost` row, shipped with
+   that official table and the right home for values a deployment wants under
+   version control:
 
    ```yaml
    - insert:
@@ -93,6 +97,14 @@ places, or in both:
 2. **The user layer** — the Settings card, stored under the `token-cost` key of
    `settings.yaml`. It wins field by field over the base, and clearing a field in
    the card restores the base value.
+
+The shipped table is `cordis.patch.yml` in this package — the bundle layer that
+inserts the row — and its prices come from
+<https://api-docs.deepseek.com/quick_start/pricing/> (USD per million tokens; the
+Chinese page quotes 元). It names the catalog's own ids for the
+`deepseek-official` route, so it prices the official endpoint and nothing else:
+prices move at the provider, so a deployment that needs exact numbers overrides
+this config in its own patch layer.
 
 ## Declaring rates
 

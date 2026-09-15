@@ -54,10 +54,13 @@ dsh plugin --profile web add dsh-plugin-token-cost
 
 ## 快速开始
 
-插件 **不自带任何费率**，所以全新安装不会给任何东西定价：在至少声明一个路由之前，胶囊
-一直显示 `≈$—`。费率可以声明在两处之一，或两处都声明：
+插件把**官方 DeepSeek 费率表**作为 `token-cost` 这一行的基线一起发出，所以全新安装就能给
+官方路由定价：峰值以美元 / 百万 token 计，空闲为峰值的一半，峰时按 DeepSeek 自己的规则。
+费率表没点名的路由——另一个 provider，或一套自己的 id 与价格的代理——显示为 `unpriced`，
+胶囊保持 `≈$—`，直到它被声明。费率可以声明在两处之一，或两处都声明：
 
-1. **组合配置基线** —— `token-cost` 这一行的 `config`，适合希望纳入版本管理的部署值：
+1. **组合配置基线** —— `token-cost` 这一行的 `config`，出厂即带这份官方费率表，也是希望纳入
+   版本管理的部署值该待的地方：
 
    ```yaml
    - insert:
@@ -82,6 +85,11 @@ dsh plugin --profile web add dsh-plugin-token-cost
 
 2. **用户层** —— 设置卡片，存放在 `settings.yaml` 的 `token-cost` 键下。它逐字段覆盖
    基线，在卡片里清空某个字段即可恢复基线值。
+
+出厂的那份费率表就是本包根目录的 `cordis.patch.yml`——插入这一行的 bundle 层，价格取自
+<https://api-docs.deepseek.com/quick_start/pricing/>（美元 / 百万 token；中文页是元）。
+它填的是 `deepseek-official` 路由在模型目录里的模型 id，所以只给官方端点定价；价格变的是
+provider 那一侧，在意确切数字的部署在自己的补丁层里覆盖这份 config。
 
 ## 声明费率
 
