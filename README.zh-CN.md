@@ -45,7 +45,9 @@ dsh plugin --profile web add dsh-plugin-token-cost
 ```
 
 然后重启该 profile。bundle 层会插入 `token-cost` 这一行，宿主部分注册投影与设置命名
-空间，浏览器部分由 `/plugins/dsh-plugin-token-cost/client.js` 提供。
+空间，浏览器部分走客户端模块注册表：它按包名搭在 shell 那条合并请求
+`/plugins/??<pkg>/client.js,…` 上，单独 GET `/plugins/dsh-plugin-token-cost/client.js`
+会 404。
 
 本包直接发布普通 JavaScript——一个 ESM 宿主入口，加一个手写的 module-factory 浏览器
 产物——所以以上任何安装方式 **都不需要构建步骤**。git 安装拉取的是源码而不是构建产物，

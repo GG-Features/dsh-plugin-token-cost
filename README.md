@@ -52,7 +52,9 @@ dsh plugin --profile web add dsh-plugin-token-cost
 
 Then restart the profile. The bundle layer inserts the `token-cost` row, the host
 half registers the projection and the settings namespace, and the browser half is
-served from `/plugins/dsh-plugin-token-cost/client.js`.
+served through the client module registry: it rides the shell's combined
+`/plugins/??<pkg>/client.js,…` request under the package name, so a bare GET of
+`/plugins/dsh-plugin-token-cost/client.js` answers 404.
 
 The package ships plain JavaScript — an ESM host entry and a hand-written
 module-factory browser bundle — so **no build step runs** in any of those forms. A
