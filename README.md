@@ -27,6 +27,12 @@ mark while edits are staged, and one footer save that writes the rate table and
 the schedule together in a single revision-fenced mutation. A confirmed save
 collapses the card again.
 
+## What it looks like
+
+![The composer pill, with its breakdown panel expanded](docs/pill.png)
+
+![The Token rates card, holding the shipped official table](docs/rates-card.png)
+
 ## Install
 
 From the git repository:
