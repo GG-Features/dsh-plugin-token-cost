@@ -63,7 +63,7 @@ bundle.apply({
         register(options, component) { registrations.push({ options, component }); return () => {} },
       }
     }
-    if (name === 'settingsScope') return { bind: () => scope }
+    if (name === 'configForms') return { get: () => scope }
     if (name === 'locale') return { register: () => () => {}, subscribe: () => () => {}, bind: () => (key) => key }
     return undefined
   },
@@ -73,10 +73,11 @@ bundle.apply({
   },
 })
 
-const card = registrations.find((entry) => entry.options.name === 'settings.plugin.item')
+const card = registrations.find((entry) => entry.options.name === 'plugins.row.config')
 const dock = registrations.find((entry) => entry.options.name === 'conversation.composer.dock')
-assert.ok(card, 'the settings card must be registered')
+assert.ok(card, 'the rates card must be registered')
 assert.ok(dock, 'the composer pill must be registered')
+assert.equal(card.options.key, 'dsh-plugin-token-cost#token-cost', 'the card occupies its bundle row page')
 
 /** Render the card against a pristine document and return its container. */
 function openCard() {
@@ -96,6 +97,14 @@ test('the card starts collapsed and opens on its header', () => {
   fireEvent.click(container.querySelector('.dsh-plugin-token-cost-card__header'))
   assert.ok(container.innerHTML.includes('__body'), 'open after the header click')
   assert.ok(container.innerHTML.includes('__footer'), 'the save row lives in the footer')
+  cleanup()
+})
+
+test('the summary view renders the one-liner and no form', () => {
+  store.value = { schedule: SCHEDULE, rates: RATES }
+  const view = render(React.createElement(card.component, { view: 'summary' }))
+  assert.equal(view.container.textContent, 'card.description')
+  assert.ok(!view.container.innerHTML.includes('__body'), 'the one-liner carries no form')
   cleanup()
 })
 
@@ -143,6 +152,23 @@ test('a schedule edit writes the schedule', async () => {
   const schedule = ops.find((op) => op.path[0] === 'schedule')
   assert.ok(schedule, 'the schedule op is present')
   assert.ok(schedule.value.peakDays.includes(6), 'the staged day reached the write')
+  cleanup()
+})
+
+test('the last peak window cannot be removed, so no schedule is ever windowless', async () => {
+  const { container, buttonWithText } = openCard()
+  fireEvent.click(container.querySelector('.dsh-plugin-token-cost-card__header'))
+  const removeFirstWindow = () => {
+    const row = container.querySelector('.dsh-plugin-token-cost-card__window')
+    fireEvent.click([...row.querySelectorAll('button')].find((button) => button.textContent === 'card.remove'))
+  }
+  removeFirstWindow()
+  removeFirstWindow()
+  assert.equal(container.querySelectorAll('.dsh-plugin-token-cost-card__window').length, 0, 'both windows are staged away')
+  fireEvent.click(buttonWithText('card.save'))
+  await React.act(async () => {})
+  assert.ok(container.innerHTML.includes('dsh-plugin-token-cost-card__error'), 'the refusal is reported')
+  assert.equal(store.mutations.length, 0, 'a windowless schedule is never written')
   cleanup()
 })
 

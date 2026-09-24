@@ -35,7 +35,7 @@ const PEAK_USD = (100 * 1 + 200 * 2 + 1000 * 3) / 1e6
 const OFF_USD = (100 * 1 + 200 * 2 + 1000 * 3) * 0.5 / 1e6
 
 /** Mount the plugin against a fake context and expose its projection definition. */
-function mount(resolved = { schedule: SCHEDULE, rates: RATES }, config = resolved) {
+function mount(resolved = { schedule: SCHEDULE, rates: RATES }, config = plugin.Config(resolved)) {
   let captured
   const ctx = {
     logger: { warn() {} },
@@ -44,16 +44,13 @@ function mount(resolved = { schedule: SCHEDULE, rates: RATES }, config = resolve
       return () => { if (typeof dispose === 'function') dispose() }
     },
     get() { return undefined },
-    settings: {
-      register(namespace, schema, options) {
-        assert.equal(namespace, 'token-cost')
-        captured = { schema, options }
-        return { get: () => resolved, watch: () => () => {}, update: async () => {}, replace: async () => {} }
-      },
+    // The optional Settings child: `apply` only states its page policy there.
+    inject(_dependencies, callback) {
+      callback({ effect: ctx.effect, settings: { configure: () => () => {} } })
     },
     sessionProjections: {
       register(definition) {
-        captured.definition = definition
+        captured = { definition }
         return () => {}
       },
     },
@@ -62,7 +59,6 @@ function mount(resolved = { schedule: SCHEDULE, rates: RATES }, config = resolve
   assert.ok(captured.definition, 'the projection must be registered')
   return {
     definition: captured.definition,
-    options: captured.options,
     /** Drive a synthetic event list through the fold and return the wire view. */
     view(events) {
       let state = captured.definition.init({}, 0)
@@ -213,41 +209,43 @@ test('the state schema accepts what the fold wrote and refuses a foreign histogr
   }))
 })
 
-test('the namespace validation refuses a stale rate field and an empty schedule', () => {
-  const host = mount()
-  const { validate } = host.options
-  assert.equal(typeof validate, 'function')
-  assert.throws(() => validate({
-    schedule: SCHEDULE,
-    rates: [{ provider: 'p', model: 'm', input: 1, output: 2, cacheRead: 3, cacheWrite: 4, offPeak: { input: 0.5, output: 1, cacheRead: 1.5, cacheWrite: 2 } }],
-  }))
-  assert.throws(() => validate({ schedule: { ...SCHEDULE, peakWindows: [] }, rates: RATES }))
-  assert.throws(() => validate({ schedule: { ...SCHEDULE, peakDays: [] }, rates: RATES }))
-  validate({ schedule: SCHEDULE, rates: RATES })
+test('the schema refuses an empty peak-day list and an out-of-range field', () => {
+  assert.throws(() => plugin.Config({ rates: RATES, schedule: { ...SCHEDULE, peakDays: [] } }))
+  assert.throws(() => plugin.Config({ rates: RATES, schedule: { ...SCHEDULE, offPeakMultiplier: 2 } }))
+  assert.throws(() => plugin.Config({ rates: RATES, schedule: { ...SCHEDULE, peakDays: [9] } }))
+  plugin.Config({ rates: RATES, schedule: SCHEDULE })
 })
 
 test('the config schema defaults the display currency to plain USD', () => {
-  assert.deepEqual(plugin.Config({ rates: [] }).currency, { code: 'USD', symbol: '$', rate: 1 })
+  assert.deepEqual(plugin.Config({ rates: [] }).currency.get(), { code: 'USD', symbol: '$', rate: 1 })
   assert.deepEqual(
-    plugin.Config({ rates: [], currency: { code: 'CNY', symbol: '¥', rate: 7.1 } }).currency,
+    plugin.Config({ rates: [], currency: { code: 'CNY', symbol: '¥', rate: 7.1 } }).currency.get(),
     { code: 'CNY', symbol: '¥', rate: 7.1 },
   )
   // A half-written currency fails loudly instead of borrowing the USD symbol.
   assert.throws(() => plugin.Config({ rates: [], currency: { code: 'CNY' } }))
 })
 
-test('the namespace validation refusals cover the display currency', () => {
-  const host = mount()
-  const { validate } = host.options
-  validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: 7.1 } })
-  assert.throws(() => validate({
-    schedule: SCHEDULE,
-    rates: RATES,
-    currency: { code: 'CNY', symbol: '¥', rate: 7.1, live: true },
-  }))
-  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: '', symbol: '¥', rate: 7.1 } }))
-  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '', rate: 7.1 } }))
-  assert.throws(() => validate({ schedule: SCHEDULE, rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: -1 } }))
+test('the schema refusals cover the display currency', () => {
+  plugin.Config({ rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: 7.1 } })
+  assert.throws(() => plugin.Config({ rates: RATES, currency: { code: '', symbol: '¥', rate: 7.1 } }))
+  assert.throws(() => plugin.Config({ rates: RATES, currency: { code: 'CNY', symbol: '', rate: 7.1 } }))
+  assert.throws(() => plugin.Config({ rates: RATES, currency: { code: 'CNY', symbol: '¥', rate: -1 } }))
+})
+
+test('a volatile edit reprices the next read without remounting', () => {
+  // The Loader commits a live edit into the same reference, so the projection
+  // must read the reference at view time rather than a value captured at mount.
+  const rates = { value: RATES }
+  const host = mount(undefined, {
+    rates: { get: () => rates.value },
+    schedule: { get: () => SCHEDULE },
+    currency: { get: () => ({ code: 'USD', symbol: '$', rate: 1 }) },
+  })
+  const events = [header('p', 'm'), message(1, 1, 'p', 'm', usage(100, 200, 1000, 0), PEAK_MORNING)]
+  near(host.view(events).totalUsd, PEAK_USD, 'declared rate total')
+  rates.value = [{ provider: 'p', model: 'm', input: 2, output: 2, cacheRead: 3, cacheWrite: 4 }]
+  near(host.view(events).totalUsd, (100 * 2 + 200 * 2 + 1000 * 3) / 1e6, 'edited rate total')
 })
 
 test('a display currency never moves a priced amount', () => {

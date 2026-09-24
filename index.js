@@ -2,8 +2,8 @@
  * Host half of `dsh-plugin-token-cost`.
  *
  * One session projection — `tokenCostEstimate` — folds provider-reported usage
- * per model route, and one settings namespace — `token-cost` — declares the
- * rates and the schedule that price it.
+ * per model route, and one Cordis Config — the row's own `rates`, `schedule` and
+ * `currency` — declares the rates and the schedule that price it.
  *
  * Three properties drive the design:
  *
@@ -11,7 +11,9 @@
  *   off-peak multiplier are deployment configuration, not session state, so
  *   editing any of them reprices the complete durable log at the next read
  *   without a state version bump and without invalidating a persisted
- *   checkpoint.
+ *   checkpoint. The three fields are declared `.volatile()`, so a settings write
+ *   commits the new value into the running reference and the next read sees it
+ *   with no remount.
  * - **Time is folded, not resolved.** Each sample lands in the slot its request
  *   was committed in — one of the 48 half-hours of a UTC weekday — so an
  *   attempt stays priced by the period it happened in no matter when the
@@ -69,8 +71,8 @@ const PeakWindow = z.object({
  */
 const Schedule = z.object({
   utcOffsetMinutes: z.number().min(-1440).max(1440).required(),
-  peakDays: z.array(z.number().min(1).max(7)).required(),
-  peakWindows: z.array(PeakWindow).required(),
+  peakDays: z.array(z.number().min(1).max(7)).min(1).required(),
+  peakWindows: z.array(PeakWindow).min(1).required(),
   offPeakMultiplier: z.number().min(0).max(1).required(),
 })
 
@@ -82,8 +84,8 @@ const Schedule = z.object({
  * the number becomes text. No field here can move a priced amount.
  */
 const Currency = z.object({
-  code: z.string().required(),
-  symbol: z.string().required(),
+  code: z.string().min(1).required(),
+  symbol: z.string().min(1).required(),
   rate: z.number().min(0).required(),
 })
 
@@ -97,74 +99,38 @@ const Currency = z.object({
  * `currency` defaults to plain USD.
  */
 export const Config = z.object({
-  schedule: z.union([Schedule]),
-  rates: z.array(RateEntry).default([]),
-  currency: Currency.default({ code: 'USD', symbol: '$', rate: 1 }),
+  schedule: z.union([Schedule]).volatile(),
+  rates: z.array(RateEntry).default([]).volatile(),
+  currency: Currency.default({ code: 'USD', symbol: '$', rate: 1 }).volatile(),
 })
 
 /** Loader plugin name. */
 export const name = 'dsh-plugin-token-cost'
 
-/** The projection registry and the settings service this plugin reads. */
-export const inject = ['sessionProjections', 'settings']
-
-/** Every key one rate entry may carry; anything else is a mistake worth naming. */
-const RATE_KEYS = ['provider', 'model', 'input', 'output', 'cacheRead', 'cacheWrite']
-/** Every key the schedule may carry. */
-const SCHEDULE_KEYS = ['utcOffsetMinutes', 'peakDays', 'peakWindows', 'offPeakMultiplier']
-/** Every key one peak window may carry. */
-const WINDOW_KEYS = ['startMinutes', 'endMinutes']
-/** Every key the display currency may carry. */
-const CURRENCY_KEYS = ['code', 'symbol', 'rate']
+/**
+ * The projection registry this plugin folds into. `settings` is not a hard
+ * dependency: the plugin reaches it through an optional child injection in
+ * `apply`, so it runs without Settings and only the form-page policy needs it.
+ */
+export const inject = ['sessionProjections']
 
 /**
- * Reject the fields this schema deliberately does not have. Schemastery passes
- * unknown keys through, so a carried-over `offPeak` rate set would otherwise be
- * dropped silently and price every attempt at the peak rate.
+ * Every refusal this plugin can state in the schema lives in the schema above:
+ * `min(1)` on the peak-day list and on the currency code and symbol, `min(0)` on
+ * every rate and on the offset, window and multiplier ranges. dsh 0.1.7 validates
+ * a settings write against the plugin's own Config (its `settings` service
+ * projects the Loader's resolved config into forms), so the hand-written section
+ * guard that the removed `ctx.settings.register(..., { validate })` hook needed
+ * has no owner left.
+ *
+ * Two of that guard's refusals have no schema form and are therefore stated
+ * where they can be: an unknown key is no longer refused at the write
+ * (schemastery passes it through, and both halves read the declared fields only,
+ * so it stays inert), and an empty `peakWindows` list is refused by the rates
+ * card rather than by the schema — schemastery skips a collection's `min` check
+ * when the element schema carries a default, which every object schema does, so
+ * `z.array(PeakWindow).min(1)` would silently accept `[]`.
  */
-function validateSection(value) {
-  const rates = value === undefined || value === null ? undefined : value.rates
-  if (Array.isArray(rates)) {
-    rates.forEach((entry, index) => {
-      for (const key of Object.keys(entry)) {
-        if (!RATE_KEYS.includes(key)) {
-          throw new Error(`token-cost: rate entry ${index} carries unknown field ${JSON.stringify(key)}; off-peak pricing is schedule.offPeakMultiplier, not a second rate set`)
-        }
-      }
-    })
-  }
-  const currency = value === undefined || value === null ? undefined : value.currency
-  if (currency !== undefined && currency !== null) {
-    for (const key of Object.keys(currency)) {
-      if (!CURRENCY_KEYS.includes(key)) throw new Error(`token-cost: currency carries unknown field ${JSON.stringify(key)}`)
-    }
-    if (typeof currency.code !== 'string' || currency.code.length === 0) {
-      throw new Error('token-cost: currency.code must be a non-empty string')
-    }
-    if (typeof currency.symbol !== 'string' || currency.symbol.length === 0) {
-      throw new Error('token-cost: currency.symbol must be a non-empty string')
-    }
-    if (typeof currency.rate !== 'number' || !Number.isFinite(currency.rate) || currency.rate < 0) {
-      throw new Error('token-cost: currency.rate must be a non-negative number of display units per 1 USD')
-    }
-  }
-  const schedule = value === undefined || value === null ? undefined : value.schedule
-  if (schedule === undefined || schedule === null) return
-  for (const key of Object.keys(schedule)) {
-    if (!SCHEDULE_KEYS.includes(key)) throw new Error(`token-cost: schedule carries unknown field ${JSON.stringify(key)}`)
-  }
-  if (!Array.isArray(schedule.peakWindows) || schedule.peakWindows.length === 0) {
-    throw new Error('token-cost: schedule.peakWindows must list at least one peak window; omit schedule entirely to price every attempt at the peak rates')
-  }
-  if (!Array.isArray(schedule.peakDays) || schedule.peakDays.length === 0) {
-    throw new Error('token-cost: schedule.peakDays must list at least one ISO weekday (1 = Monday … 7 = Sunday)')
-  }
-  schedule.peakWindows.forEach((window, index) => {
-    for (const key of Object.keys(window)) {
-      if (!WINDOW_KEYS.includes(key)) throw new Error(`token-cost: schedule.peakWindows[${index}] carries unknown field ${JSON.stringify(key)}`)
-    }
-  })
-}
 
 /** Reject a persisted or restored value whose shape this unit never wrote. */
 function requireCount(value, where) {
@@ -510,22 +476,36 @@ function discounted(rates, multiplier) {
 
 /**
  * Mount the cost projection over the deployment's declared rates and schedule.
- * @param ctx - host plugin context carrying `sessionProjections` and `settings`.
- * @param config - the row's own schedule and rate table, used as the namespace base.
+ *
+ * The row's own Config is the configuration's only owner: `rates`, `schedule`
+ * and `currency` are volatile fields, so a settings write commits new values
+ * into these references without remounting the plugin, and every operation
+ * reads the reference it needs instead of a copy taken at mount.
+ *
+ * @param ctx - host plugin context carrying `sessionProjections`.
+ * @param config - the row's Config as the Loader parsed it; a direct caller may
+ *   pass plain data through `Config(raw)`, which returns the same references.
  */
-export function apply(ctx, config = { rates: [] }) {
-  const scope = ctx.settings.register('token-cost', Config, {
-    base: config,
-    validate: validateSection,
+export function apply(ctx, config = Config({ rates: [] })) {
+  // This plugin ships its own rates card, so the settings service must not also
+  // build a page for this entry from the schema.
+  ctx.inject(['settings'], (child) => {
+    child.effect(() => child.settings.configure({ auto: false }, ctx.fiber), 'dsh-plugin-token-cost: settings presentation')
   })
-  let declared = scope.get()
-  ctx.effect(() => scope.watch(() => { declared = scope.get() }), 'dsh-plugin-token-cost: settings watcher')
 
   const llm = ctx.get('llm')
 
+  /**
+   * The current value of a volatile config reference, or a plain value a direct
+   * caller passed. Captured for one operation and never retained.
+   */
+  const current = (reference) => (
+    reference !== undefined && typeof reference.get === 'function' ? reference.get() : reference
+  )
+
   /** Resolve one exact route's peak rates: the settings table first, then the adapter. */
   const resolveRates = (provider, model) => {
-    const entries = declared.rates
+    const entries = current(config.rates) ?? []
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index]
       if (entry.provider === provider && entry.model === model) {
@@ -609,7 +589,7 @@ export function apply(ctx, config = { rates: [] }) {
     const buckets = { uncachedInputUsd: 0, cacheReadUsd: 0, cacheWriteUsd: 0, outputUsd: 0 }
     let peakUsd = 0
     let offPeakUsd = 0
-    const schedule = declared.schedule
+    const schedule = current(config.schedule)
     const multiplier = schedule === undefined || schedule === null ? 1 : schedule.offPeakMultiplier
 
     const routes = state.routes.map((entry) => {

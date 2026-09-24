@@ -2,11 +2,12 @@
 # half, whose `dsh.client` declaration supplies the browser half from the same
 # package.
 #
-# The row's `config` is the base layer of the `token-cost` settings namespace,
-# and it ships the official DeepSeek table so an install prices the official
-# route without any further setup: peak USD per million tokens, off-peak at
-# half of them (DeepSeek's own rule), peak hours Beijing time Monday–Friday
-# 09:00–12:00 and 14:00–18:00.
+# The row's `config` is the base layer of this plugin's own configuration:
+# `rates`, `schedule` and `currency` are declared `.volatile()`, so an edit
+# reaches the running profile, and it ships the official DeepSeek table so an
+# install prices the official route without any further setup: peak USD per
+# million tokens, off-peak at half of them (DeepSeek's own rule), peak hours
+# Beijing time Monday–Friday 09:00–12:00 and 14:00–18:00.
 #
 # Source: https://api-docs.deepseek.com/quick_start/pricing/ (read 2026-09-15).
 # DeepSeek publishes no cache-write charge, so `cacheWrite` is 0.
@@ -24,8 +25,9 @@
 #           cacheRead: 0.006
 #           cacheWrite: 0
 #
-# or by saving the same values in Settings → Plugins → Plugin configuration →
-# 费率与计费时段 / Token rates, whose user layer wins field by field. A rate
+# or by saving the same values on the Plugins page, in this bundle's `token-cost`
+# row — the `费率与计费时段` / `Token rates` card — whose write lands in the
+# profile's own patch layer and wins field by field. A rate
 # entry is matched by the provider/model pair the harness reports for an
 # attempt, so a proxy or another provider route stays `unpriced` — never
 # silently free — until it declares its own entries.

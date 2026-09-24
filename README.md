@@ -11,9 +11,9 @@ happened, not at whatever the rate happens to be when you read the total.
 | Contribution | Kind | Where it shows |
 | --- | --- | --- |
 | `tokenCostEstimate` | host session projection (client-visible) | read by the pill through `useProjection` |
-| `token-cost` | host settings namespace | written to `settings.yaml` by the card |
+| `token-cost` | host row config (volatile `rates` / `schedule` / `currency`) | the profile's `cordis.patch.yml`, written by the card |
 | composer pill | browser `conversation.composer.dock` entry | under the composer, beside the shipped stats pills |
-| `Token rates` card | browser `settings.plugin.item` entry keyed `token-cost` | Settings → Plugins → Plugin configuration |
+| `Token rates` card | browser `plugins.row.config` entry keyed `dsh-plugin-token-cost#token-cost` | Plugins → this bundle → its `token-cost` row |
 
 The pill shows `≈$0.0123`, or `≈¥0.0873` once another display currency is
 declared. Clicking it expands a panel with the four priced usage buckets (tokens,
@@ -22,11 +22,13 @@ strip), the peak/off-peak split for the configured schedule, and one row per
 route. A route with no declared rates renders as `unpriced` and contributes
 nothing to the total — unpriced is never reported as free.
 
-In Settings → Plugins → Plugin configuration the card joins the shipped cards as
-one more collapsed row: a title and description that open in place, a header
-mark while edits are staged, and one footer save that writes the display
-currency, the rate table and the schedule together in a single revision-fenced
-mutation. A confirmed save collapses the card again.
+Opening the Plugins page, this bundle, and then its `token-cost` row shows the
+card as one collapsed row on the row's page: a title and description that open in
+place, a header mark while edits are staged, and one footer save that writes the
+display currency, the rate table and the schedule together in a single
+revision-fenced mutation. A confirmed save collapses the card again. The card is
+the row's whole configuration surface: the schema-derived page is switched off
+for this entry, so there is exactly one place to edit it.
 
 ## What it looks like
 
@@ -48,7 +50,7 @@ attached to a release):
 ```sh
 dsh plugin --profile web add /path/to/dsh-plugin-token-cost
 pnpm pack
-dsh plugin --profile web add ./dsh-plugin-token-cost-0.1.0.tgz
+dsh plugin --profile web add ./dsh-plugin-token-cost-0.2.0.tgz
 ```
 
 Once the package is on the registry, the shortest form is:
@@ -58,10 +60,10 @@ dsh plugin --profile web add dsh-plugin-token-cost
 ```
 
 Then restart the profile. The bundle layer inserts the `token-cost` row, the host
-half registers the projection and the settings namespace, and the browser half is
-served through the client module registry: it rides the shell's combined
-`/plugins/??<pkg>/client.js,…` request under the package name, so a bare GET of
-`/plugins/dsh-plugin-token-cost/client.js` answers 404.
+half registers the projection and declares the row's volatile configuration, and
+the browser half is served through the client module registry: it rides the
+shell's combined `/plugins/??<pkg>/client.js,…` request under the package name,
+so a bare GET of `/plugins/dsh-plugin-token-cost/client.js` answers 404.
 
 The package ships plain JavaScript — an ESM host entry and a hand-written
 module-factory browser bundle — so **no build step runs** in any of those forms. A
@@ -105,9 +107,12 @@ is declared. Rates resolve in either of two places, or in both:
            currency: { code: CNY, symbol: ¥, rate: 7.1 }
    ```
 
-2. **The user layer** — the Settings card, stored under the `token-cost` key of
-   `settings.yaml`. It wins field by field over the base, and clearing a field in
-   the card restores the base value.
+2. **The user layer** — the Settings card, stored as the `token-cost` row's
+   `config` in the profile's `cordis.patch.yml`. It wins field by field over the
+   base, and clearing a field in the card restores the base value. Because a
+   Cordis config patch replaces a row's whole `config`, a save stores the
+   composed values plus every volatile field, so later changes to the shipped
+   table do not reach this profile until the row's config override is removed.
 
 The shipped table is `cordis.patch.yml` in this package — the bundle layer that
 inserts the row — and its prices come from
@@ -130,41 +135,46 @@ Three sources, resolved in this order:
 A rate entry is one route with its four peak rates:
 
 ```yaml
-token-cost:
-  rates:
-    - provider: deepseek-official
-      model: deepseek-v4.1-flash
-      input: 0.3
-      output: 1.2
-      cacheRead: 0.006
-      cacheWrite: 0
+- id: token-cost
+  config:
+    rates:
+      - provider: deepseek-official
+        model: deepseek-v4.1-flash
+        input: 0.3
+        output: 1.2
+        cacheRead: 0.006
+        cacheWrite: 0
 ```
 
 All four are required and are USD per million tokens, matching the four disjoint
 buckets of the provider's reported usage; the display currency changes what an
-amount reads as, never what a rate means. An unknown field on a rate entry is
-refused loudly at load rather than ignored, so a value the schema cannot honor is
-never silently dropped.
+amount reads as, never what a rate means. The schema refuses a rate below zero,
+and a card write states the same requirement in the browser before the write
+leaves it. An unknown key on a rate entry is inert rather than refused: the
+schema passes it through and both halves read the six declared fields only.
 
 ### The pricing schedule
 
 ```yaml
-token-cost:
-  schedule:
-    utcOffsetMinutes: 480        # local offset the windows are read in
-    peakDays: [1, 2, 3, 4, 5]    # ISO weekdays; 1 = Monday … 7 = Sunday
-    peakWindows:
-      - { startMinutes: 540, endMinutes: 720 }     # 09:00–12:00 local
-      - { startMinutes: 840, endMinutes: 1080 }    # 14:00–18:00 local
-    offPeakMultiplier: 0.5
+- id: token-cost
+  config:
+    schedule:
+      utcOffsetMinutes: 480        # local offset the windows are read in
+      peakDays: [1, 2, 3, 4, 5]    # ISO weekdays; 1 = Monday … 7 = Sunday
+      peakWindows:
+        - { startMinutes: 540, endMinutes: 720 }     # 09:00–12:00 local
+        - { startMinutes: 840, endMinutes: 1080 }    # 14:00–18:00 local
+      offPeakMultiplier: 0.5
 ```
 
 An attempt is **peak** when its local weekday is in `peakDays` *and* its local
 time of day falls inside one of `peakWindows` (start inclusive, end exclusive,
 each 0..1440). Every other attempt — other hours, other days, weekends — is
 **off-peak** and priced at the peak rate scaled by `offPeakMultiplier`. Omitting
-`schedule` prices everything at the peak rates. `peakDays` and `peakWindows` must
-each list at least one entry; a schedule with neither is refused at load.
+`schedule` prices everything at the peak rates. The schema requires at least one
+peak day, at least one window per day, an offset within ±1440 minutes and a
+multiplier between 0 and 1, and the card refuses to write a windowless schedule
+at all, so a schedule that could never mark an hour as peak is never stored.
 
 The discount is one multiplier on purpose: four flat rates plus a factor cannot
 drift out of the 1:2 relationship a flat off-peak discount requires, and a
@@ -176,11 +186,12 @@ Amounts are priced in USD and shown converted. `currency` says what the browser
 half prints in front of an amount and what one USD is worth in it:
 
 ```yaml
-token-cost:
-  currency:
-    code: CNY     # the label the switch marks as current
-    symbol: ¥     # the text in front of an amount
-    rate: 7.1     # display units per 1 USD
+- id: token-cost
+  config:
+    currency:
+      code: CNY     # the label the switch marks as current
+      symbol: ¥     # the text in front of an amount
+      rate: 7.1     # display units per 1 USD
 ```
 
 The field is display-only. The projection, its persisted checkpoint and every
@@ -217,7 +228,7 @@ same field without opening Settings.
 - Neither the rates nor the schedule are folded into the state: editing either
   one reprices the complete durable log at the next read with no state version
   bump and no checkpoint invalidation.
-- The browser re-prices from the published histograms and the live settings scope
+- The browser re-prices from the published histograms and the live config form
   — rates *and* schedule — whenever the table covers every route with usage and
   the view carries the histogram basis this bundle understands. A partial table,
   or a host half publishing another basis, leaves the host view untouched: the
@@ -225,13 +236,22 @@ same field without opening Settings.
 
 ## Compatibility
 
-- Written against **dsh 0.1.5-rc.2**.
+- Written against **dsh 0.1.7-rc.1**.
+- 0.2.0 is the 0.1.7 port. The configuration's owner became the row's own Cordis
+  `Config` (three `.volatile()` fields, read through each reference's `get()`),
+  the card moved from the removed `settings.plugin.item` slot to this row's
+  `plugins.row.config` page, and the browser half reads and writes the shared
+  form through `ctx.configForms.get('token-cost')` instead of the removed
+  `ctx.settingsScope.bind`. On 0.1.6 and earlier this version cannot work: the
+  browser half's `configForms` injection never resolves and the Web UI refuses to
+  finish booting. Use 0.1.0 there.
 - It builds only on public — but pre-stable — extension points:
-  `ctx.sessionProjections.register`, `ctx.settings.register` (including its
-  `validate` option), `ctx.settingsScope.bind`, the `settings.plugin.item` and
-  `conversation.composer.dock` slots, `SessionEvent.time`, `assistant/message`
-  usage, and `llm/retry-started`. A release that changes any of them may need a
-  matching plugin release.
+  `ctx.sessionProjections.register`, a plugin `Config` with `.volatile()` fields,
+  `ctx.settings.configure({ auto: false })` behind an optional `ctx.inject`,
+  `ctx.configForms.get(<entry id>)` with its `getSnapshot` / `subscribe` /
+  `mutate`, the `plugins.row.config` and `conversation.composer.dock` slots,
+  `SessionEvent.time`, `assistant/message` usage, and `llm/retry-started`. A
+  release that changes any of them may need a matching plugin release.
 - The projection key is `tokenCostEstimate`, deliberately not `tokenCost`:
   `@deepseek-ai/dsh-token-meter` owns that key, and a second registration of an
   existing key defers to the first instead of failing, which would look like a
@@ -272,13 +292,13 @@ pnpm install
 pnpm test
 ```
 
-- `test/host.test.mjs` — the fold, the schedule, the pricing, the display
-  currency's defaults and refusals, and the schema refusals. Runs on
-  `node --test` with no dependencies.
+- `test/host.test.mjs` — the fold, the schedule, the pricing, a live volatile
+  edit repricing the next read, the display currency's defaults and refusals, and
+  the schema refusals. Runs on `node --test` with no test-only dependencies.
 - `test/client.test.mjs` — the card's disclosure behaviour (collapsed, open,
-  staged edits, one footer save, discard, auto-collapse), its currency switch,
-  and the pill's pricing and formatting, mounted in jsdom with React Testing
-  Library.
+  staged edits, one footer save, discard, auto-collapse, the windowless-schedule
+  refusal), its one-liner view, its currency switch, and the pill's pricing and
+  formatting, mounted in jsdom with React Testing Library.
 
 ### Panel layout
 

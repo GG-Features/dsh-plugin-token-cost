@@ -2,10 +2,11 @@
  * Browser half of `dsh-plugin-token-cost`.
  *
  * Two contributions: the cost pill (with its breakdown panel) in the composer
- * dock, and the `Token rates` card in Settings → Plugins → Plugin configuration.
+ * dock, and the `Token rates` card on the row page of this bundle's own
+ * `token-cost` entry on the Plugins page.
  *
  * The pill re-prices in the browser from the projection's weekday/half-hour
- * histograms and the live `token-cost` settings scope — rates *and* the peak
+ * histograms and the live `token-cost` config form — rates *and* the peak
  * schedule with its off-peak multiplier — so editing either one shows
  * immediately instead of waiting for the next projection state change: the host
  * view only republishes when the folded state moves, and configuration edits do
@@ -30,8 +31,13 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
 
-    /** Settings namespace this plugin's host half registers. */
+    /** Profile entry id of this plugin's host row, which is also the settings namespace its config form is addressed by. */
     const NS = 'token-cost'
+    /**
+     * Key this card occupies in the Plugins page's `plugins.row.config` slot:
+     * `<bundle package name>#<row id as the bundle's patch declares it>`.
+     */
+    const ROW_CONFIG_KEY = 'dsh-plugin-token-cost#token-cost'
     /** Client-visible projection key this plugin's host half registers. */
     const PROJECTION = 'tokenCostEstimate'
     /** ISO weekday numbers in display order, Monday first. */
@@ -693,6 +699,9 @@ window.__ModuleLoader__.load({
      * per route.
      */
     function TokenRatesCard(props) {
+      // The Plugins page renders the same entry twice: its one-liner in the card
+      // head and the form itself on the page. Only the form needs the document.
+      if (props.view === 'summary') return props.t('card.description')
       const snapshot = useScopeSnapshot(props.scope)
       const settings = settingsOf(snapshot)
       const rateState = React.useState(() => settings.rates.map(toDraft))
@@ -1146,33 +1155,36 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Mount the composer pill and the settings card.
+     * Mount the composer pill and the rates card.
      * @param ctx - the browser plugin context.
      */
     function apply(ctx) {
       const slots = ctx.get('slots')
-      const binder = ctx.get('settingsScope')
+      const forms = ctx.get('configForms')
       const locale = ctx.get('locale')
-      if (slots === undefined || binder === undefined || locale === undefined) return
+      if (slots === undefined || forms === undefined || locale === undefined) return
 
       ctx.effect(() => locale.register(NS, { zh: ZH, en: EN }), 'dsh-plugin-token-cost: dictionaries')
       const t = locale.bind(NS)
       ctx.effect(() => insertStyles(CSS), 'dsh-plugin-token-cost: styles')
 
-      const scope = binder.bind({ namespace: NS })
+      // The config form of this plugin's own host entry. The settings domain
+      // shares one form per profile entry id, so the pill and the card read and
+      // write the same document, and a write by either shows in the other.
+      const form = forms.get(NS)
 
       slots.inject('conversation.composer.dock', () => slots.register(
         { name: 'conversation.composer.dock', id: 'token-cost', order: 5 },
-        (runtime) => React.createElement(CostPill, { runtime, t, locale, scope }),
+        (props) => React.createElement(CostPill, { runtime: props, t, locale, scope: form }),
       ))
 
-      slots.inject('settings.plugin.item', () => slots.register(
-        { name: 'settings.plugin.item', key: NS },
-        () => React.createElement(TokenRatesCard, { t, locale, scope }),
+      slots.inject('plugins.row.config', () => slots.register(
+        { name: 'plugins.row.config', key: ROW_CONFIG_KEY },
+        (props) => React.createElement(TokenRatesCard, { view: props.view, t, locale, scope: form }),
       ))
     }
 
-    exports.inject = ['slots', 'settingsScope', 'locale']
+    exports.inject = ['slots', 'configForms', 'locale']
     exports.apply = apply
     return module.exports
   },
